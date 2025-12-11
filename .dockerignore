@@ -3,6 +3,5 @@ node_modules
 .env
 .DS_Store
 local-certs
-postgres-config
 scripts
 screenshot.png
