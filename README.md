@@ -2,6 +2,8 @@
 
 A PostgreSQL security min-lab environment focusing on SSL configuration and Client Certificate Authentication.
 
+![Screenshot](screenshot.png)
+
 ## Features
 
 - **PostgreSQL 16** running in Docker.
