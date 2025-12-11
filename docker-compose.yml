@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/markwylde/pgcertmin:v1.1.2
+    image: ghcr.io/markwylde/pgcertmin:v1.1.4
     restart: always
     ports:
       - "8780:8780"
@@ -18,5 +18,5 @@ services:
       CA_KEY_PATH: /data/certs/postgres-clients/ca.key
       CLIENT_CERTS_DIR: /data/certs/postgres-clients/
     volumes:
-      - /data/certs:/data/certs:ro
+      - /data/certs:/data/certs
       - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
