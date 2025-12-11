@@ -35,10 +35,6 @@
         <main class="main-content">
             <header class="top-bar">
                 <h1><%= it.title %></h1>
-                <div class="user-profile">
-                    <span>Admin</span>
-                    <div class="avatar">A</div>
-                </div>
             </header>
             <div class="content-area">
                 <%~ it.body %>
