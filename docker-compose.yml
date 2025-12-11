@@ -28,3 +28,26 @@ services:
       -c log_disconnections=on
       -c log_min_messages=info
       -c log_statement=all
+
+  app:
+    build: .
+    ports:
+      - "8780:8780"
+    environment:
+      - PORT=8780
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=puzed
+      - PGUSER=puzed-app
+      - PGPASSWORD=password
+      - PGSSLROOTCERT=/app/local-certs/ca.crt
+      - PGSSLCERT=/app/local-certs/client.crt
+      - PGSSLKEY=/app/local-certs/client.key
+      - CA_CERT_PATH=/app/local-certs/ca.crt
+      - CA_KEY_PATH=/app/local-certs/ca.key
+      - CLIENT_CERTS_DIR=/app/local-certs/
+    volumes:
+      - ./local-certs:/app/local-certs
+      - ./postgres-config:/app/postgres-config
+    depends_on:
+      - postgres
