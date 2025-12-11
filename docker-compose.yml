@@ -1,22 +1,30 @@
 services:
-  app:
-    image: ghcr.io/markwylde/pgcertmin:v1.1.4
-    restart: always
+  postgres:
+    image: postgres:16
     ports:
-      - "8780:8780"
+      - "5433:5432"
     environment:
-      PORT: 8780
-      PGHOST: i.puzed.com
-      PGPORT: 15324
-      PGDATABASE: puzed
-      PGUSER: puzed-app
-      PGSSLMODE: verify-full
-      PGSSLROOTCERT: /etc/ssl/certs/ca-certificates.crt
-      PGSSLCERT: /data/certs/postgres-clients/client.crt
-      PGSSLKEY: /data/certs/postgres-clients/client.key
-      CA_CERT_PATH: /data/certs/postgres-clients/ca.crt
-      CA_KEY_PATH: /data/certs/postgres-clients/ca.key
-      CLIENT_CERTS_DIR: /data/certs/postgres-clients/
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: puzed
     volumes:
-      - /data/certs:/data/certs
-      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - ./local-certs:/certs
+      - ./postgres-config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+      - ./postgres-config/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      postgres 
+      -c ssl=on 
+      -c ssl_cert_file=/certs/server.crt 
+      -c ssl_key_file=/certs/server.key 
+      -c ssl_ca_file=/certs/ca.crt 
+      -c hba_file=/etc/postgresql/pg_hba.conf
+      -c logging_collector=on
+      -c log_destination=csvlog
+      -c log_directory=/var/log/postgresql
+      -c log_filename=postgresql
+      -c log_rotation_age=0
+      -c log_rotation_size=0
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_min_messages=info
+      -c log_statement=all
