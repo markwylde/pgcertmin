@@ -1,0 +1,93 @@
+<% layout('./layout') %>
+
+<div class="status-page">
+    <div class="stat-card">
+        <h3>Logging Status</h3>
+        <div class="status-indicator">
+            <i data-lucide="<%= it.loggingEnabled ? 'check-circle' : 'x-circle' %>" class="<%= it.loggingEnabled ? 'text-success' : 'text-danger' %>"></i>
+            <span><%= it.loggingEnabled ? 'Logging Enabled' : 'Logging Disabled' %></span>
+        </div>
+        
+        <% if (!it.loggingEnabled) { %>
+            <div class="actions">
+                <form action="/status/enable-logging" method="POST">
+                    <button type="submit" class="btn btn-primary">
+                        <i data-lucide="play"></i> Create and Enable Logging
+                    </button>
+                </form>
+            </div>
+            <p class="help-text">This will run the initialization script to setup the logging table.</p>
+        <% } else { %>
+            <p class="help-text">Logging is active and capturing connection events.</p>
+        <% } %>
+    </div>
+
+    <div class="stat-card">
+        <h3>Security Exposure</h3>
+        <div class="stat-box">
+            <span class="value <%= it.insecureUserCount > 0 ? 'text-warning' : 'text-success' %>"><%= it.insecureUserCount %></span>
+            <span class="label">Users accessible without Client Certificate</span>
+        </div>
+        <p class="help-text">
+            These are users who can potentially log in using only a password, bypassing mutual TLS (Client Cert) requirements based on current pg_hba.conf rules.
+        </p>
+    </div>
+</div>
+
+<style>
+    .status-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        max-width: 800px;
+    }
+    
+    .status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin: 1.5rem 0;
+        color: var(--text-primary);
+    }
+    
+    .text-success { color: var(--success); }
+    .text-danger { color: var(--danger); }
+    .text-warning { color: #f59e0b; }
+
+    .stat-box {
+        margin: 1.5rem 0;
+    }
+    .stat-box .value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        display: block;
+        line-height: 1;
+        margin-bottom: 0.5rem;
+    }
+    .stat-box .label {
+        color: var(--text-primary);
+        font-weight: 500;
+        font-size: 1.1rem;
+    }
+    
+    .help-text {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.5;
+        margin-top: 1rem;
+    }
+    
+    .actions {
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    h3 {
+        margin: 0;
+        font-size: 1.25rem;
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+</style>

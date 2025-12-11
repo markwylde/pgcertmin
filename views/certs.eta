@@ -1,0 +1,77 @@
+<% layout("./layout") %>
+
+<div class="table-container">
+    <div style="padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border);">
+        <h2 style="margin: 0; font-size: 1.1rem;">Client Certificates</h2>
+        <div style="display: flex; gap: 1rem;">
+            <a href="/certs/download/ca" class="btn" style="background: rgba(255,255,255,0.1); color: var(--text-primary);">
+                <i data-lucide="download"></i> Download CA Cert
+            </a>
+            <button class="btn btn-primary" onclick="document.getElementById('create-modal').style.display='flex'">
+                <i data-lucide="plus"></i> New Cert
+            </button>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Common Name (CN)</th>
+                <th>Created</th>
+                <th style="text-align: right">Downloads</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% it.certs.forEach(function(cert) { %>
+            <tr>
+                <td style="font-weight: 500; color: var(--text-primary);">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i data-lucide="key" style="width: 16px; color: var(--accent)"></i>
+                        <%= cert.name %>
+                    </div>
+                </td>
+                <td style="color: var(--text-secondary);">
+                    <%= new Date(cert.created).toLocaleDateString() %>
+                </td>
+                <td style="text-align: right">
+                     <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+                        <a href="/certs/download/<%= cert.name %>/crt" class="btn" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background: rgba(56, 189, 248, 0.1); color: var(--accent);">
+                            .crt
+                        </a>
+                        <a href="/certs/download/<%= cert.name %>/key" class="btn" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background: rgba(56, 189, 248, 0.1); color: var(--accent);">
+                            .key
+                        </a>
+                     </div>
+                </td>
+            </tr>
+            <% }) %>
+            <% if (it.certs.length === 0) { %>
+            <tr>
+                <td colspan="3" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No client certificates found.</td>
+            </tr>
+            <% } %>
+        </tbody>
+    </table>
+</div>
+
+<!-- Simple Modal -->
+<div id="create-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(5px);">
+    <div style="background: var(--bg-card); padding: 2rem; border-radius: 1rem; width: 400px; border: 1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        <h3 style="margin-top: 0;">Create Client Certificate</h3>
+        <form action="/certs/create" method="POST">
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Common Name (User)</label>
+                <select name="name" required style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 0.5rem; color: var(--text-primary); outline: none;">
+                    <% if (it.users) { %>
+                        <% it.users.forEach(function(user) { %>
+                            <option value="<%= user.rolname %>"><%= user.rolname %></option>
+                        <% }) %>
+                    <% } %>
+                </select>
+            </div>
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button type="button" class="btn" onclick="document.getElementById('create-modal').style.display='none'" style="background: transparent; color: var(--text-secondary);">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Certificate</button>
+            </div>
+        </form>
+    </div>
+</div>

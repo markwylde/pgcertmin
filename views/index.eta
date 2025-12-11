@@ -1,0 +1,133 @@
+<% layout("./layout") %>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Databases</span>
+            <div class="stat-icon"><i data-lucide="database"></i></div>
+        </div>
+        <div class="stat-value"><%= it.stats.dbs %></div> 
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Active Users</span>
+            <div class="stat-icon"><i data-lucide="users"></i></div>
+        </div>
+        <div class="stat-value"><%= it.stats.users %></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Certificates Issued</span>
+            <div class="stat-icon"><i data-lucide="shield-check"></i></div>
+        </div>
+        <div class="stat-value"><%= it.stats.certs %></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Server Status</span>
+            <div class="stat-icon"><i data-lucide="activity"></i></div>
+        </div>
+        <div class="stat-value" style="color: <%= it.stats.status === 'Online' ? 'var(--success)' : 'var(--danger)' %>"><%= it.stats.status %></div>
+    </div>
+</div>
+
+<div class="table-container">
+    <div style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
+        <h2 style="margin: 0; font-size: 1.1rem;">Live Activity</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>IP Address</th>
+                <th>SSL Status</th>
+                <th>State / Query</th>
+                <th>Started</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% if (it.activity.length === 0) { %>
+            <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary);">No active connections.</td>
+            </tr>
+            <% } else { %>
+                <% it.activity.forEach(function(row) { %>
+                <tr>
+                    <td style="font-weight: 500;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--success)"></div>
+                            <%= row.usename || 'background' %>
+                        </div>
+                    </td>
+                    <td style="color: var(--text-secondary);"><%= row.client_addr || 'Internal' %></td>
+                    <td>
+                        <% if (row.ssl) { %>
+                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                <span class="status-badge active" style="font-size: 0.7rem;"><%= row.version %></span>
+                                <% if (row.client_dn) { %>
+                                    <span style="font-size: 0.7rem; color: var(--text-secondary);" title="<%= row.client_dn %>">CN=...<%= row.client_dn.split('CN=')[1]?.split(',')[0] || 'Client' %></span>
+                                <% } %>
+                            </div>
+                        <% } else { %>
+                            <span style="color: var(--text-secondary); font-size: 0.8rem;">Unencrypted</span>
+                        <% } %>
+                    </td>
+                    <td>
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <span class="status-badge" style="background: rgba(0,0,0,0.2); width: fit-content;"><%= row.state %></span>
+                            <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-secondary); opacity: 0.8; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                <%= row.query %>
+                            </span>
+                        </div>
+                    </td>
+                    <td style="color: var(--text-secondary); font-size: 0.85rem;">
+                        <%= new Date(row.backend_start).toLocaleTimeString() %>
+                    </td>
+                </tr>
+                <% }) %>
+            <% } %>
+        </tbody>
+    </table>
+</div>
+
+<div class="table-container" style="margin-top: 2rem;">
+    <div style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
+        <h2 style="margin: 0; font-size: 1.1rem;">Login History (File Log)</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>User</th>
+                <th>Database</th>
+                <th>Source</th>
+                <th>Event</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% if (!it.history || it.history.length === 0) { %>
+            <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary);">No history logs found.</td>
+            </tr>
+            <% } else { %>
+                <% it.history.forEach(function(row) { %>
+                <tr>
+                    <td style="color: var(--text-secondary); white-space: nowrap;">
+                        <%= new Date(row.log_time).toLocaleString() %>
+                    </td>
+                    <td style="font-weight: 500;"><%= row.user_name || '-' %></td>
+                    <td><%= row.database_name || '-' %></td>
+                    <td style="font-family: monospace; color: var(--text-secondary);"><%= row.connection_from || '-' %></td>
+                    <td>
+                        <% if (row.message.includes('authorized')) { %>
+                            <span class="status-badge active">Authorized</span>
+                        <% } else { %>
+                            <span style="color: var(--text-secondary); font-size: 0.9rem;"><%= row.message %></span>
+                        <% } %>
+                    </td>
+                </tr>
+                <% }) %>
+            <% } %>
+        </tbody>
+    </table>
+</div>

@@ -1,0 +1,70 @@
+<% layout("./layout") %>
+
+<div class="table-container">
+    <div style="padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border);">
+        <h2 style="margin: 0; font-size: 1.1rem;">Databases</h2>
+        <button class="btn btn-primary" onclick="document.getElementById('create-db-modal').style.display='flex'">
+            <i data-lucide="plus"></i> New Database
+        </button>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Owner</th>
+                <th>Encoding</th>
+                <th>Size</th>
+                <th style="text-align: right">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% it.databases.forEach(function(db) { %>
+            <tr>
+                <td style="font-weight: 500; color: var(--accent);"><%= db.name %></td>
+                <td><%= db.owner %></td>
+                <td><%= db.encoding %></td>
+                <td><%= db.size %></td>
+                <td style="text-align: right">
+                     <button class="btn" style="background: transparent; color: var(--text-secondary); padding: 0.25rem;">
+                        <i data-lucide="more-vertical" style="width: 18px; height: 18px;"></i>
+                    </button>
+                </td>
+            </tr>
+            <% }) %>
+            <% if (it.databases.length === 0) { %>
+            <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No databases found.</td>
+            </tr>
+            <% } %>
+        </tbody>
+    </table>
+</div>
+
+<!-- Create Database Modal -->
+<div id="create-db-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(5px);">
+    <div style="background: var(--bg-card); padding: 2rem; border-radius: 1rem; width: 400px; border: 1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        <h3 style="margin-top: 0;">Create New Database</h3>
+        <form action="/databases/create" method="POST">
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Database Name</label>
+                <input type="text" name="name" required placeholder="e.g. analytics_db" 
+                       style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 0.5rem; color: var(--text-primary); outline: none;">
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                 <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Owner</label>
+                 <select name="owner" style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 0.5rem; color: var(--text-primary); outline: none;">
+                    <option value="">Current User (Default)</option>
+                    <% if (it.users) { %>
+                        <% it.users.forEach(function(user) { %>
+                            <option value="<%= user.rolname %>"><%= user.rolname %></option>
+                        <% }) %>
+                    <% } %>
+                 </select>
+            </div>
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button type="button" class="btn" onclick="document.getElementById('create-db-modal').style.display='none'" style="background: transparent; color: var(--text-secondary);">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>

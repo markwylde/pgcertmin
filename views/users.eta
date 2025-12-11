@@ -1,0 +1,155 @@
+<% layout("./layout") %>
+
+<div class="table-container">
+    <div style="padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border);">
+        <h2 style="margin: 0; font-size: 1.1rem;">Users & Roles</h2>
+        <button class="btn btn-primary" onclick="document.getElementById('create-user-modal').style.display='flex'">
+            <i data-lucide="user-plus"></i> New User
+        </button>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Attributes</th>
+                <th>Expiry</th>
+                <th style="text-align: right">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% it.users.forEach(function(user) { %>
+            <tr>
+                <td style="font-weight: 500; color: var(--text-primary);">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background: <%= user.canlogin ? 'var(--success)' : 'var(--text-secondary)' %>"></div>
+                        <%= user.name %>
+                    </div>
+                </td>
+                <td>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <% if (user.superuser) { %>
+                            <span class="status-badge" style="background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2);">Superuser</span>
+                        <% } %>
+                        <% if (user.createrole) { %>
+                            <span class="status-badge active">Create Role</span>
+                        <% } %>
+                        <% if (user.createdb) { %>
+                            <span class="status-badge active">Create DB</span>
+                        <% } %>
+                    </div>
+                </td>
+                <td style="color: var(--text-secondary);"><%= user.expiry %></td>
+                <td style="text-align: right">
+                     <button class="btn" style="background: transparent; color: var(--text-secondary); padding: 0.25rem;">
+                        <i data-lucide="more-vertical" style="width: 18px; height: 18px;"></i>
+                    </button>
+                </td>
+            </tr>
+            <% }) %>
+
+            <% /* System Users Group */ %>
+            <% if (it.systemUsers && it.systemUsers.length > 0) { %>
+            <tr>
+                <td colspan="4" style="padding: 0; border-bottom: none;">
+                    <details style="width: 100%;">
+                        <summary style="padding: 0.75rem 1rem; cursor: pointer; background: rgba(0,0,0,0.1); color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem; outline: none; list-style: none;">
+                            <i data-lucide="server" style="width: 16px;"></i>
+                            <span style="font-weight: 500;">System Users (<%= it.systemUsers.length %>)</span>
+                            <i data-lucide="chevron-down" style="width: 16px; margin-left: auto;"></i>
+                        </summary>
+                        <div style="background: rgba(0,0,0,0.05);">
+                            <table style="width: 100%;">
+                                <% it.systemUsers.forEach(function(user) { %>
+                                    <tr>
+                                        <td style="padding-left: 3rem; color: var(--text-secondary); width: 30%;">
+                                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                                <div style="width: 6px; height: 6px; border-radius: 50%; opacity: 0.5; background: <%= user.canlogin ? 'var(--success)' : 'var(--text-secondary)' %>"></div>
+                                                <%= user.name %>
+                                            </div>
+                                        </td>
+                                        <td style="width: 30%;">
+                                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; opacity: 0.8;">
+                                                <% if (user.superuser) { %>
+                                                    <span class="status-badge" style="font-size: 0.7rem;">Superuser</span>
+                                                <% } %>
+                                            </div>
+                                        </td>
+                                        <td style="color: var(--text-secondary);">System</td>
+                                        <td></td>
+                                    </tr>
+                                <% }) %>
+                            </table>
+                        </div>
+                    </details>
+                </td>
+            </tr>
+            <% } %>
+        </tbody>
+    </table>
+</div>
+
+<!-- Create User Modal -->
+<div id="create-user-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(5px);">
+    <div style="background: var(--bg-card); padding: 2rem; border-radius: 1rem; width: 400px; border: 1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        <h3 style="margin-top: 0;">Create New User</h3>
+        <form action="/users/create" method="POST">
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Username</label>
+                <input type="text" name="name" required placeholder="e.g. jdoe" 
+                       style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 0.5rem; color: var(--text-primary); outline: none;">
+            </div>
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Password</label>
+                <input type="password" name="password" required placeholder="Strong password" 
+                       style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 0.5rem; color: var(--text-primary); outline: none;">
+            </div>
+            <div style="margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); font-size: 0.875rem;">
+                    <input type="checkbox" name="canlogin" checked> Can Login
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); font-size: 0.875rem;">
+                    <input type="checkbox" name="superuser"> Superuser
+                </label>
+                 <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); font-size: 0.875rem;">
+                    <input type="checkbox" name="createrole"> Create Role
+                </label>
+                 <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); font-size: 0.875rem;">
+                    <input type="checkbox" name="createdb"> Create DB
+                </label>
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Database Access</label>
+                <div style="border: 1px solid var(--border); border-radius: 0.5rem; background: rgba(0,0,0,0.2); max-height: 150px; overflow-y: auto; padding: 0.75rem;">
+                    
+                    <!-- Create New Database Option -->
+                    <div style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);">
+                         <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--accent); font-weight: 500; font-size: 0.875rem; cursor: pointer;">
+                            <input type="checkbox" name="create_new_db" onchange="document.getElementById('new-db-input').style.display = this.checked ? 'block' : 'none'; if(this.checked) document.getElementById('new-db-input').focus();">
+                            Create a new database for this user
+                        </label>
+                        <input type="text" id="new-db-input" name="new_db_name" placeholder="Database Name"
+                               style="display: none; margin-top: 0.5rem; width: 100%; padding: 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 0.25rem; color: var(--text-primary); outline: none;">
+                    </div>
+
+                    <!-- Existing Databases -->
+                    <% if (it.databases) { %>
+                        <% it.databases.forEach(function(db) { %>
+                             <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); font-size: 0.875rem; margin-bottom: 0.25rem; cursor: pointer;">
+                                <input type="checkbox" name="access_dbs" value="<%= db.datname %>">
+                                <span style="display: flex; align-items: center; gap: 0.25rem;">
+                                    <i data-lucide="database" style="width: 12px; color: var(--text-secondary);"></i>
+                                    <%= db.datname %>
+                                </span>
+                            </label>
+                        <% }) %>
+                    <% } %>
+                </div>
+            </div>
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button type="button" class="btn" onclick="document.getElementById('create-user-modal').style.display='none'" style="background: transparent; color: var(--text-secondary);">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create User</button>
+            </div>
+        </form>
+    </div>
+</div>

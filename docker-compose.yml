@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: puzed
+    volumes:
+      - ./local-certs:/certs
+      - ./postgres-config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+      - ./postgres-config/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      postgres 
+      -c ssl=on 
+      -c ssl_cert_file=/certs/server.crt 
+      -c ssl_key_file=/certs/server.key 
+      -c ssl_ca_file=/certs/ca.crt 
+      -c hba_file=/etc/postgresql/pg_hba.conf
+      -c logging_collector=on
+      -c log_destination=csvlog
+      -c log_directory=/var/log/postgresql
+      -c log_filename=postgresql
+      -c log_rotation_age=0
+      -c log_rotation_size=0
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_min_messages=info
+      -c log_statement=all

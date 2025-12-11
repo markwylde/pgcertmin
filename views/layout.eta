@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= it.title %> - PGSecMin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/lucide.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo">
+                <i data-lucide="shield-check"></i>
+                <span>PGSecMin</span>
+            </div>
+            <nav>
+                <a href="/" class="<%= it.path === '/' ? 'active' : '' %>">
+                    <i data-lucide="layout-dashboard"></i> Dashboard
+                </a>
+                <a href="/databases" class="<%= it.path === '/databases' ? 'active' : '' %>">
+                    <i data-lucide="database"></i> Databases
+                </a>
+                <a href="/users" class="<%= it.path === '/users' ? 'active' : '' %>">
+                    <i data-lucide="users"></i> Users
+                </a>
+                <a href="/certs" class="<%= it.path === '/certs' ? 'active' : '' %>">
+                    <i data-lucide="file-key"></i> Certificates
+                </a>
+                <a href="/status" class="<%= it.path === '/status' ? 'active' : '' %>">
+                    <i data-lucide="activity"></i> Status
+                </a>
+            </nav>
+        </aside>
+        <main class="main-content">
+            <header class="top-bar">
+                <h1><%= it.title %></h1>
+                <div class="user-profile">
+                    <span>Admin</span>
+                    <div class="avatar">A</div>
+                </div>
+            </header>
+            <div class="content-area">
+                <%~ it.body %>
+            </div>
+        </main>
+    </div>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
