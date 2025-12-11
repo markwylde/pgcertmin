@@ -35,6 +35,10 @@
         <main class="main-content">
             <header class="top-bar">
                 <h1><%= it.title %></h1>
+                <div class="user-info">
+                    <i data-lucide="user"></i>
+                    <span><%= it.dbUser %>@<%= it.dbHost %></span>
+                </div>
             </header>
             <div class="content-area">
                 <%~ it.body %>

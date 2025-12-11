@@ -108,6 +108,13 @@ app.set("views", viewDir);
 // Routes
 const db = require("./db");
 
+// Make db connection info available to all views
+app.use((_req, res, next) => {
+	res.locals.dbUser = db.config.user;
+	res.locals.dbHost = db.config.host;
+	next();
+});
+
 app.get("/", async (_req, res) => {
 	try {
 		const dbCount = await db.query("SELECT count(*) FROM pg_database");

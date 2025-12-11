@@ -32,4 +32,9 @@ pool.on("error", (err, _client) => {
 module.exports = {
 	query: (text, params) => pool.query(text, params),
 	pool,
+	config: {
+		user: config.user,
+		host: config.host,
+		database: config.database,
+	},
 };
