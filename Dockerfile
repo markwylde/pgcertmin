@@ -1,5 +1,8 @@
 FROM node:22-alpine
 
+# Install system dependencies
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 # Install dependencies separately for better caching
