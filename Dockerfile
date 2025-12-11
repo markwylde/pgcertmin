@@ -13,6 +13,7 @@ RUN npm ci --omit=dev
 COPY src ./src
 COPY public ./public
 COPY views ./views
+COPY postgres-config ./postgres-config
 
 # Expose port (default is 8780)
 EXPOSE 8780
