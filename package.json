@@ -39,12 +39,19 @@
 					"npmPublish": false
 				}
 			],
+			[
+				"@semantic-release/exec",
+				{
+					"publishCmd": "docker build -t ghcr.io/markwylde/pgcertmin:v${nextRelease.version} -t ghcr.io/markwylde/pgcertmin:latest . && docker push --all-tags ghcr.io/markwylde/pgcertmin"
+				}
+			],
 			"@semantic-release/github",
 			"@semantic-release/git"
 		]
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.3.8",
+		"@semantic-release/exec": "^7.1.0",
 		"@semantic-release/git": "^10.0.1",
 		"semantic-release": "^25.0.2"
 	}
