@@ -40,6 +40,9 @@
                         <a href="/certs/download/<%= cert.name %>/key" class="btn" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background: rgba(56, 189, 248, 0.1); color: var(--accent);">
                             .key
                         </a>
+                        <button class="btn" style="padding: 0.25rem 0.5rem; background: rgba(239, 68, 68, 0.1); color: var(--danger);" onclick="showDeleteModal('<%= cert.name %>')">
+                            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                        </button>
                      </div>
                 </td>
             </tr>
@@ -75,3 +78,30 @@
         </form>
     </div>
 </div>
+
+<!-- Delete Certificate Modal -->
+<div id="delete-cert-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(5px);">
+    <div style="background: var(--bg-card); padding: 2rem; border-radius: 1rem; width: 400px; border: 1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        <h3 style="margin-top: 0; color: var(--danger);">
+            <i data-lucide="alert-triangle" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 0.5rem;"></i>
+            Delete Certificate
+        </h3>
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+            Are you sure you want to delete the certificate for <strong id="delete-cert-name" style="color: var(--text-primary);"></strong>? Users with this certificate will no longer be able to authenticate.
+        </p>
+        <form id="delete-cert-form" method="POST">
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button type="button" class="btn" onclick="document.getElementById('delete-cert-modal').style.display='none'" style="background: transparent; color: var(--text-secondary);">Cancel</button>
+                <button type="submit" class="btn" style="background: var(--danger); color: white;">Delete Certificate</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function showDeleteModal(certName) {
+    document.getElementById('delete-cert-name').textContent = certName;
+    document.getElementById('delete-cert-form').action = '/certs/' + encodeURIComponent(certName) + '/delete';
+    document.getElementById('delete-cert-modal').style.display = 'flex';
+}
+</script>

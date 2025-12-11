@@ -94,6 +94,45 @@ const CertManager = {
 			key: path.join(CLIENT_CERTS_DIR, `${safeName}.key`),
 		};
 	},
+
+	deleteCert: async (name) => {
+		const safeName = name.replace(/[^a-z0-9-_]/gi, "");
+		if (!safeName) throw new Error("Invalid name");
+
+		// Prevent deletion of CA certificate
+		if (safeName.toLowerCase() === "ca") {
+			throw new Error("Cannot delete CA certificate");
+		}
+
+		const keyPath = path.join(CLIENT_CERTS_DIR, `${safeName}.key`);
+		const crtPath = path.join(CLIENT_CERTS_DIR, `${safeName}.crt`);
+
+		const errors = [];
+
+		// Delete cert file
+		try {
+			if (fs.existsSync(crtPath)) {
+				await fs.promises.unlink(crtPath);
+			}
+		} catch (e) {
+			errors.push(`Failed to delete certificate: ${e.message}`);
+		}
+
+		// Delete key file
+		try {
+			if (fs.existsSync(keyPath)) {
+				await fs.promises.unlink(keyPath);
+			}
+		} catch (e) {
+			errors.push(`Failed to delete key: ${e.message}`);
+		}
+
+		if (errors.length > 0) {
+			throw new Error(errors.join("; "));
+		}
+
+		return { success: true };
+	},
 };
 
 module.exports = CertManager;

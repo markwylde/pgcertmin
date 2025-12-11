@@ -245,6 +245,40 @@ app.post("/databases/create", async (req, res) => {
 	}
 });
 
+app.post("/databases/:name/delete", async (req, res) => {
+	try {
+		const { name } = req.params;
+		if (!name || !/^[a-zA-Z0-9_]+$/.test(name)) {
+			throw new Error(
+				"Invalid database name. Use only letters, numbers, and underscores.",
+			);
+		}
+
+		// Prevent deletion of critical system databases
+		const protectedDbs = ["postgres", "template0", "template1"];
+		if (protectedDbs.includes(name.toLowerCase())) {
+			throw new Error(`Cannot delete system database: ${name}`);
+		}
+
+		// Terminate all connections to the database first
+		await db.query(`
+			SELECT pg_terminate_backend(pid)
+			FROM pg_stat_activity
+			WHERE datname = '${name.replace(/'/g, "''")}'
+			AND pid <> pg_backend_pid()
+		`);
+
+		// Drop the database
+		const safeName = `"${name}"`;
+		await db.query(`DROP DATABASE ${safeName}`);
+
+		res.redirect("/databases");
+	} catch (err) {
+		console.error(err);
+		res.status(500).send(`Error deleting database: ${err.message}`);
+	}
+});
+
 app.get("/users", async (_req, res) => {
 	try {
 		const result = await db.query(`
@@ -369,6 +403,43 @@ app.post("/users/create", async (req, res) => {
 	}
 });
 
+app.post("/users/:name/delete", async (req, res) => {
+	try {
+		const { name } = req.params;
+		if (!name || !/^[a-zA-Z0-9_]+$/.test(name)) {
+			throw new Error(
+				"Invalid username. Use only letters, numbers, and underscores.",
+			);
+		}
+
+		// Prevent deletion of critical system users
+		const protectedUsers = ["postgres"];
+		if (
+			protectedUsers.includes(name.toLowerCase()) ||
+			name.toLowerCase().startsWith("pg_")
+		) {
+			throw new Error(`Cannot delete system user: ${name}`);
+		}
+
+		// Terminate all connections for this user first
+		await db.query(`
+			SELECT pg_terminate_backend(pid)
+			FROM pg_stat_activity
+			WHERE usename = '${name.replace(/'/g, "''")}'
+			AND pid <> pg_backend_pid()
+		`);
+
+		// Drop the user/role
+		const safeName = `"${name}"`;
+		await db.query(`DROP ROLE ${safeName}`);
+
+		res.redirect("/users");
+	} catch (err) {
+		console.error(err);
+		res.status(500).send(`Error deleting user: ${err.message}`);
+	}
+});
+
 // Cert Routes
 const certManager = require("./certs");
 
@@ -435,6 +506,18 @@ app.get("/certs/download/:name/:type", (req, res) => {
 		res.download(file, `${name}.${type}`);
 	} else {
 		res.status(404).send("File not found");
+	}
+});
+
+app.post("/certs/:name/delete", async (req, res) => {
+	try {
+		const { name } = req.params;
+		if (!name) throw new Error("Name is required");
+		await certManager.deleteCert(name);
+		res.redirect("/certs");
+	} catch (err) {
+		console.error("Cert deletion error:", err);
+		res.status(500).send(`Error deleting certificate: ${err.message}`);
 	}
 });
 
