@@ -1,7 +1,11 @@
 FROM node:22-alpine
 
-# Install system dependencies
-RUN apk add --no-cache openssl
+# Install system dependencies including pgbackrest
+RUN apk add --no-cache openssl pgbackrest
+
+# Create pgbackrest directories
+RUN mkdir -p /etc/pgbackrest /var/log/pgbackrest /var/lib/pgbackrest \
+    && chown -R node:node /etc/pgbackrest /var/log/pgbackrest /var/lib/pgbackrest
 
 WORKDIR /app
 

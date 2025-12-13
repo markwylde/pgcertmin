@@ -1,0 +1,567 @@
+<%
+// Destructure status for easier access, but keep it safe
+const status = it.status || {};
+const pgbackrest = status.pgbackrest || {};
+const s3 = status.s3 || {};
+const s3cfg = s3.config || {};
+const configFile = status.configFile || {};
+const stanza = status.stanza || {};
+const stats = status.stats || {};
+const cfg = status.config || {};
+const backupInfo = status.backupInfo || {};
+const logs = it.logs || [];
+const pgLogs = it.pgLogs || [];
+%>
+
+<% if (it.error) { %>
+    <div class="error-banner">
+        <div class="error-header">
+            <i data-lucide="alert-circle"></i>
+            <span>Error</span>
+        </div>
+        <div class="error-simple"><%= it.error %></div>
+    </div>
+<% } %>
+
+<!-- System Status Cards -->
+<% if (stanza.configured) { %>
+<div class="status-cards">
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">pgBackRest</span>
+            <div class="stat-icon">
+                <i data-lucide="<%= pgbackrest.installed ? 'check-circle' : 'x-circle' %>"></i>
+            </div>
+        </div>
+        <div class="stat-value <%= pgbackrest.installed ? 'text-success' : 'text-danger' %>">
+            <%= pgbackrest.installed ? 'Installed' : 'Not Found' %>
+        </div>
+        <% if (!pgbackrest.installed) { %>
+            <p class="stat-hint">Install pgBackRest to enable backups</p>
+        <% } %>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">S3 Storage</span>
+            <div class="stat-icon">
+                <i data-lucide="<%= s3.configured ? 'cloud' : 'cloud-off' %>"></i>
+            </div>
+        </div>
+        <div class="stat-value <%= s3.configured ? 'text-success' : 'text-warning' %>">
+            <%= s3.configured ? 'Configured' : 'Not Configured' %>
+        </div>
+        <% if (s3.configured) { %>
+            <p class="stat-hint">Bucket: <%= s3cfg.bucket || 'N/A' %></p>
+        <% } else { %>
+            <p class="stat-hint">Missing: <%= (s3.missing && s3.missing.length) ? s3.missing.join(', ') : 'Configuration' %></p>
+        <% } %>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Stanza</span>
+            <div class="stat-icon">
+                <i data-lucide="<%= stanza.configured ? 'database' : 'database-off' %>"></i>
+            </div>
+        </div>
+        <div class="stat-value <%= stanza.configured ? 'text-success' : 'text-warning' %>">
+            <%= stanza.configured ? (cfg.stanza || 'main') : 'Not Configured' %>
+        </div>
+        <% if (!stanza.configured) { %>
+            <p class="stat-hint">Run stanza-create first</p>
+        <% } %>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-header">
+            <span class="stat-label">Total Backups</span>
+            <div class="stat-icon">
+                <i data-lucide="archive"></i>
+            </div>
+        </div>
+        <div class="stat-value">
+            <%= stats.totalBackups || 0 %>
+        </div>
+        <p class="stat-hint">
+            Full: <%= stats.fullBackups || 0 %> |
+            Diff: <%= stats.diffBackups || 0 %> |
+            Incr: <%= stats.incrBackups || 0 %>
+        </p>
+    </div>
+</div>
+<% } %>
+
+<!-- Backup Statistics -->
+<% if (stanza.configured && stats.totalBackups > 0) { %>
+<div class="stats-section">
+    <h3>Backup Statistics</h3>
+    <div class="stats-grid">
+        <div class="stat-item">
+            <span class="stat-item-label">Total Data Size</span>
+            <span class="stat-item-value"><%= it.formatBytes(stats.totalSize) %></span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-item-label">Repository Size</span>
+            <span class="stat-item-value"><%= it.formatBytes(stats.totalRepoSize) %></span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-item-label">Compression Savings</span>
+            <span class="stat-item-value"><%= stats.compressionRatio %>%</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-item-label">Last Backup</span>
+            <span class="stat-item-value">
+                <% if (stats.lastBackup && stats.lastBackup.timestamp && stats.lastBackup.timestamp.stop) { %>
+                    <%= stats.lastBackup.timestamp.stop.toLocaleString() %>
+                <% } else { %>
+                    N/A
+                <% } %>
+            </span>
+        </div>
+    </div>
+</div>
+<% } %>
+
+<!-- Daily Backup Status Grid -->
+<% if (stanza.configured && stats.totalBackups > 0) { %>
+<div class="stats-section">
+    <div class="chart-header">
+        <h3>Daily Backup Status (Last 30 Days)</h3>
+        <div class="chart-legend">
+            <div class="legend-item"><span class="legend-dot" style="background: var(--success)"></span> Full</div>
+            <div class="legend-item"><span class="legend-dot" style="background: var(--accent)"></span> Diff</div>
+            <div class="legend-item"><span class="legend-dot" style="background: #f59e0b"></span> Incr</div>
+            <div class="legend-item"><span class="legend-dot" style="background: var(--bg-secondary); border: 1px solid var(--border)"></span> None</div>
+        </div>
+    </div>
+    
+    <div class="daily-grid">
+        <% 
+        // Helper to get last 30 days
+        const days = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Normalize to start of day
+        
+        for (let i = 29; i >= 0; i--) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            days.push(d);
+        }
+
+        const backups = backupInfo.backups || [];
+        
+        // Map days to status
+        days.forEach(day => {
+            // Find backups for this day (using local date string for comparison or simple time range)
+            // Storing timestamp.stop is in seconds, need to convert
+            const dayStart = day.getTime();
+            const dayEnd = dayStart + (24 * 60 * 60 * 1000);
+
+            let bestType = null; // null = none, 1=incr, 2=diff, 3=full
+            let count = 0;
+            let label = '';
+
+            backups.forEach(b => {
+                if (!b.timestamp || !b.timestamp.stop) return;
+                const stopTime = new Date(b.timestamp.stop).getTime();
+                
+                if (stopTime >= dayStart && stopTime < dayEnd) {
+                    count++;
+                    let typeScore = 0;
+                    if (b.type === 'incr') typeScore = 1;
+                    else if (b.type === 'diff') typeScore = 2;
+                    else if (b.type === 'full') typeScore = 3;
+
+                    if (typeScore > (bestType || 0)) {
+                        bestType = typeScore;
+                        label = b.label;
+                    }
+                }
+            });
+
+            let statusClass = 'status-none';
+            let typeLabel = 'No backup';
+            
+            if (bestType === 3) {
+                statusClass = 'status-full';
+                typeLabel = 'Full Backup';
+            } else if (bestType === 2) {
+                statusClass = 'status-diff';
+                typeLabel = 'Differential Backup';
+            } else if (bestType === 1) {
+                statusClass = 'status-incr';
+                typeLabel = 'Incremental Backup';
+            }
+        %>
+            <div class="day-box <%= statusClass %>" title="<%= day.toLocaleDateString() %>: <%= typeLabel %>">
+                <div class="day-tooltip">
+                    <div class="tooltip-date"><%= day.toLocaleDateString() %></div>
+                    <div class="tooltip-status"><%= typeLabel %></div>
+                    <% if (count > 0) { %>
+                        <div class="tooltip-detail"><%= count %> backup(s)</div>
+                    <% } %>
+                </div>
+            </div>
+        <% }); %>
+    </div>
+</div>
+
+<style>
+.daily-grid {
+    display: flex;
+    gap: 4px;
+    margin-top: 1rem;
+    overflow-x: auto;
+    padding-bottom: 10px; /* Space for scrollbar if needed */
+}
+
+.day-box {
+    flex: 1;
+    height: 60px;
+    min-width: 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    position: relative;
+    cursor: help;
+    transition: all 0.2s;
+}
+
+.day-box:hover {
+    transform: translateY(-2px);
+    z-index: 10;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+
+.status-full {
+    background: var(--success);
+    border-color: rgba(255,255,255,0.2);
+    /* Improve contrast for tooltip if needed, but box is solid color */
+}
+
+.status-diff {
+    background: var(--accent);
+    border-color: rgba(255,255,255,0.2);
+}
+
+.status-incr {
+    background: #f59e0b;
+    border-color: rgba(255,255,255,0.2);
+}
+
+.status-none {
+    background: rgba(255,255,255,0.03);
+}
+
+/* Simple CSS Tooltip */
+.day-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.9);
+    border: 1px solid var(--border);
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    margin-bottom: 8px;
+    z-index: 20;
+    min-width: 120px;
+    text-align: center;
+}
+
+.day-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: rgba(0,0,0,0.9) transparent transparent transparent;
+}
+
+.day-box:hover .day-tooltip {
+    opacity: 1;
+}
+
+.tooltip-date {
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: #fff;
+}
+
+.tooltip-status {
+    color: var(--text-secondary);
+}
+</style>
+<% } %>
+
+<!-- Backup Actions -->
+<% if (stanza.configured) { %>
+<div class="actions-section">
+    <h3>Run Backup</h3>
+    <div class="backup-actions" id="backup-actions">
+        <div class="backup-form">
+            <button type="button" class="btn btn-primary backup-btn" data-type="incr" <%= !stanza.configured ? 'disabled' : '' %>>
+                <i data-lucide="plus-circle" class="btn-icon-default"></i>
+                <span class="spinner"></span>
+                <span class="btn-text">Incremental Backup</span>
+            </button>
+            <span class="action-desc">Fast backup of changes since last backup</span>
+        </div>
+        <div class="backup-form">
+            <button type="button" class="btn btn-secondary backup-btn" data-type="diff" <%= !stanza.configured ? 'disabled' : '' %>>
+                <i data-lucide="layers" class="btn-icon-default"></i>
+                <span class="spinner"></span>
+                <span class="btn-text">Differential Backup</span>
+            </button>
+            <span class="action-desc">Changes since last full backup</span>
+        </div>
+        <div class="backup-form">
+            <button type="button" class="btn btn-outline backup-btn" data-type="full" <%= !stanza.configured ? 'disabled' : '' %>>
+                <i data-lucide="hard-drive" class="btn-icon-default"></i>
+                <span class="spinner"></span>
+                <span class="btn-text">Full Backup</span>
+            </button>
+            <span class="action-desc">Complete database backup</span>
+        </div>
+    </div>
+    <div id="backup-status-message" class="backup-status-message" style="display: none;"></div>
+</div>
+<% } %>
+
+<!-- Backup History and Logs -->
+<% if (stanza.configured) { %>
+<div class="table-container">
+    <div class="table-header"><h3>Backup History</h3></div>
+    <% const backups = (backupInfo.backups && backupInfo.backups.length > 0) ? backupInfo.backups : []; %>
+    <% if (backups.length > 0) { %>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 100px;">Actions</th>
+                        <th>Label</th>
+                        <th>Type</th>
+                        <th>Completed</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% backups.forEach(function(backup) { %>
+                    <tr>
+                        <td>
+                            <% if (!backup.error) { %>
+                                <button type="button" class="btn btn-restore btn-small" 
+                                    data-backup-label="<%= backup.label %>" 
+                                    data-backup-type="<%= backup.type %>" 
+                                    data-backup-time="<%= backup.timestamp && backup.timestamp.stop ? backup.timestamp.stop.toLocaleString() : 'Unknown' %>">
+                                    <i data-lucide="rotate-ccw"></i> Restore
+                                </button>
+                            <% } %>
+                        </td>
+                        <td class="backup-label"><%= backup.label %></td>
+                        <td><span class="type-badge type-<%= backup.type %>"><%= backup.type.toUpperCase() %></span></td>
+                        <td><%= backup.timestamp && backup.timestamp.stop ? backup.timestamp.stop.toLocaleString() : '-' %></td>
+                        <td>
+                            <% if (backup.error) { %>
+                                <span class="status-badge error">Error</span>
+                            <% } else { %>
+                                <span class="status-badge success">OK</span>
+                            <% } %>
+                        </td>
+                    </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+    <% } else { %>
+        <div class="empty-state">
+            <i data-lucide="archive-x"></i>
+            <p>No backups found</p>
+        </div>
+    <% } %>
+</div>
+<% } %>
+
+<!-- Backup Logs -->
+<div class="logs-section">
+    <button class="btn btn-outline btn-small log-toggle" onclick="toggleLogs()">
+        <i data-lucide="terminal"></i> <span id="log-toggle-text">Show System Logs</span>
+    </button>
+    <div id="logs-container" class="logs-container" style="display: none;">
+        <div class="logs-wrapper">
+            <div class="log-block">
+                <h4>System Logs (pgBackRest)</h4>
+                <div class="log-output">
+                    <% logs.forEach(function(log) { %>
+                        <div class="log-line">
+                            <span class="log-time"><%= log.time || '' %></span>
+                            <span class="log-msg"><%= log.message || log %></span>
+                        </div>
+                    <% }); %>
+                    <% if (logs.length === 0) { %>
+                        <div class="log-line">No logs available</div>
+                    <% } %>
+                </div>
+            </div>
+            <div class="log-block">
+                <h4>PostgreSQL Logs</h4>
+                <div class="log-output">
+                    <% pgLogs.forEach(function(log) { %>
+                    <div class="log-line">
+                        <span class="log-time">
+                            <% 
+                                let timeStr = '';
+                                if (log.timestamp) {
+                                    const parts = log.timestamp.split('T');
+                                    if (parts.length > 1) {
+                                        timeStr = parts[1].split('.')[0];
+                                    } else {
+                                        timeStr = log.timestamp;
+                                    }
+                                }
+                            %>
+                            <%= timeStr %>
+                        </span>
+                        <span class="log-msg"><%= log.message %></span>
+                    </div>
+                    <% }); %>
+                    <% if (pgLogs.length === 0) { %>
+                        <div class="log-line">No logs available</div>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Setup Wizard -->
+<% if (!stanza.configured) { %>
+<div class="setup-wizard">
+    <div class="wizard-header">
+        <i data-lucide="settings"></i>
+        <div>
+            <h3>Backup Setup Wizard</h3>
+            <p>Configure pgBackRest for incremental backups to S3</p>
+        </div>
+    </div>
+
+    <div class="wizard-steps">
+        <!-- Step 1: Install pgBackRest -->
+        <div class="wizard-step <%= pgbackrest.installed ? 'completed' : 'current' %>">
+            <div class="step-indicator">
+                <% if (pgbackrest.installed) { %>
+                    <i data-lucide="check"></i>
+                <% } else { %>
+                    <span>1</span>
+                <% } %>
+            </div>
+            <div class="step-content">
+                <h4>Install pgBackRest</h4>
+                <p class="step-desc">pgBackRest must be installed on the server.</p>
+                <% if (pgbackrest.installed) { %>
+                    <p class="step-status success">
+                        Installed version: <%= pgbackrest.version %>
+                    </p>
+                <% } else { %>
+                    <p class="step-status pending">pgBackRest not found in PATH</p>
+                    <div class="manual-command">
+                        <span class="command-label">Run in terminal:</span>
+                        <code>apt-get install pgbackrest</code>
+                    </div>
+                <% } %>
+            </div>
+        </div>
+
+        <!-- Step 2: Configure S3 -->
+        <div class="wizard-step <%= s3.configured ? 'completed' : (pgbackrest.installed ? 'current' : 'pending') %>">
+            <div class="step-indicator">
+                <% if (s3.configured) { %>
+                    <i data-lucide="check"></i>
+                <% } else { %>
+                    <span>2</span>
+                <% } %>
+            </div>
+            <div class="step-content">
+                <h4>Configure S3 Credentials</h4>
+                <p class="step-desc">Set environment variables for S3 access.</p>
+                <% if (s3.configured) { %>
+                    <p class="step-status success">S3 credentials configured</p>
+                <% } else { %>
+                     <div class="env-vars-list">
+                         <div class="env-var missing">
+                             <i data-lucide="alert-circle"></i>
+                             <code>PG_SEC_S3_KEY</code>
+                             <span class="env-status">Missing</span>
+                         </div>
+                         <div class="env-var missing">
+                             <i data-lucide="alert-circle"></i>
+                             <code>PG_SEC_S3_SECRET</code>
+                             <span class="env-status">Missing</span>
+                         </div>
+                         <div class="env-var missing">
+                            <i data-lucide="alert-circle"></i>
+                            <code>PG_SEC_S3_BUCKET</code>
+                            <span class="env-status">Missing</span>
+                        </div>
+                     </div>
+                <% } %>
+            </div>
+        </div>
+
+        <!-- Step 3: pgBackRest Config File -->
+        <div class="wizard-step <%= configFile.valid ? 'completed' : ((pgbackrest.installed && s3.configured) ? 'current' : 'pending') %>">
+            <div class="step-indicator">
+                <% if (configFile.valid) { %>
+                    <i data-lucide="check"></i>
+                <% } else { %>
+                    <span>3</span>
+                <% } %>
+            </div>
+            <div class="step-content">
+                <h4>Create Configuration File</h4>
+                <% if (configFile.valid) { %>
+                    <p class="step-status success">Configuration file installed</p>
+                <% } else { %>
+                    <p class="step-desc">Create the pgBackRest configuration file at <%= cfg.configPath || '/etc/pgbackrest/pgbackrest.conf' %>.</p>
+                    <div class="config-actions">
+                        <form action="/backups/config" method="POST" style="display: inline;">
+                            <button type="submit" class="btn btn-primary" <%= (!s3.configured) ? 'disabled' : '' %>>
+                                <i data-lucide="file-plus"></i> Create File
+                            </button>
+                        </form>
+                    </div>
+                <% } %>
+            </div>
+        </div>
+
+        <!-- Step 4: Create Stanza -->
+        <div class="wizard-step <%= (pgbackrest.installed && s3.configured && configFile.valid) ? 'current' : 'pending' %>">
+            <div class="step-indicator">
+                <span>4</span>
+            </div>
+            <div class="step-content">
+                <h4>Initialize Stanza</h4>
+                <p class="step-desc">Initialize the backup repository (stanza).</p>
+                <form action="/backups/stanza-create" method="POST" class="stanza-form">
+                    <button type="submit" class="btn btn-primary btn-large"
+                        <%= (!pgbackrest.installed || !s3.configured || !configFile.valid) ? 'disabled' : '' %>>
+                        <i data-lucide="database"></i> Create Stanza
+                    </button>
+                    <label class="checkbox-label" style="display: block; margin-top: 8px;">
+                        <input type="checkbox" name="noOnline" value="true">
+                        <span>Skip cluster check (--no-online)</span>
+                    </label>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<% } %>

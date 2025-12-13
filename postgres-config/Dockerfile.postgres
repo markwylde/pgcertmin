@@ -1,0 +1,19 @@
+FROM postgres:16
+
+# Install pgBackRest and CA certificates (needed for S3 SSL verification)
+RUN apt-get update && apt-get install -y pgbackrest ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Create pgbackrest directories
+RUN mkdir -p /etc/pgbackrest /var/log/pgbackrest /var/lib/pgbackrest && \
+    chown -R postgres:postgres /etc/pgbackrest /var/log/pgbackrest /var/lib/pgbackrest
+
+# Create PostgreSQL log directory with correct permissions (for shared volume)
+RUN mkdir -p /var/log/postgresql && \
+    chown -R postgres:postgres /var/log/postgresql
+
+# Custom entrypoint wrapper to fix permissions before postgres starts
+COPY docker-entrypoint-wrapper.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint-wrapper.sh
+
+ENTRYPOINT ["docker-entrypoint-wrapper.sh"]
+CMD ["postgres"]

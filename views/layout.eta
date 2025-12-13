@@ -27,6 +27,9 @@
                 <a href="/certs" class="<%= it.path === '/certs' ? 'active' : '' %>">
                     <i data-lucide="file-key"></i> Certificates
                 </a>
+                <a href="/backups" class="<%= it.path === '/backups' ? 'active' : '' %>">
+                    <i data-lucide="archive"></i> Backups
+                </a>
                 <a href="/status" class="<%= it.path === '/status' ? 'active' : '' %>">
                     <i data-lucide="activity"></i> Status
                 </a>
@@ -35,9 +38,20 @@
         <main class="main-content">
             <header class="top-bar">
                 <h1><%= it.title %></h1>
-                <div class="user-info">
-                    <i data-lucide="user"></i>
-                    <span><%= it.dbUser %>@<%= it.dbHost %></span>
+                <div class="header-right">
+                    <div class="user-info">
+                        <i data-lucide="database"></i>
+                        <span><%= it.dbUser %>@<%= it.dbHost %></span>
+                    </div>
+                    <div class="user-info">
+                        <i data-lucide="key"></i>
+                        <span><%= it.certName %></span>
+                    </div>
+                    <form action="/logout" method="POST" style="margin: 0;">
+                        <button type="submit" class="btn-logout" title="Logout">
+                            <i data-lucide="log-out"></i>
+                        </button>
+                    </form>
                 </div>
             </header>
             <div class="content-area">

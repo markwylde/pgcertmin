@@ -1,0 +1,2205 @@
+<% layout('./layout') %>
+
+<div class="backups-page">
+    <!-- Loading State (Always starts visible) -->
+    <div id="backups-loading" class="loading-state">
+        <div class="loading-placeholder-large">
+            <span class="loading-spinner"></span>
+            <span>Loading backup status...</span>
+        </div>
+    </div>
+    
+    <!-- Content Container (Starts hidden) -->
+    <div id="backups-content" style="display: none;"></div>
+</div>
+
+<!-- Restore Confirmation Modal -->
+<div id="restore-modal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeRestoreModal()"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i data-lucide="alert-triangle"></i> Confirm Database Restore</h3>
+            <button type="button" class="modal-close" onclick="closeRestoreModal()">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="restore-instructions">
+                <p><strong>Before proceeding, you must:</strong></p>
+
+                <div class="os-tabs">
+                    <button class="os-tab active" onclick="switchOsTab(event, 'docker')">Docker</button>
+                    <button class="os-tab" onclick="switchOsTab(event, 'debian')">Debian/Ubuntu</button>
+                    <button class="os-tab" onclick="switchOsTab(event, 'redhat')">Red Hat/CentOS</button>
+                    <button class="os-tab" onclick="switchOsTab(event, 'arch')">Arch Linux</button>
+                    <button class="os-tab" onclick="switchOsTab(event, 'windows')">Windows</button>
+                </div>
+
+                <div class="os-content active" id="os-docker">
+                    <ol>
+                        <li>Stop your PostgreSQL container/service:
+                            <code>docker stop &lt;postgres-container&gt;</code>
+                        </li>
+                        <li>Confirm the database is fully stopped</li>
+                        <li>Then click "Restore Database" below</li>
+                        <li>After restore completes, restart PostgreSQL:
+                            <code>docker start &lt;postgres-container&gt;</code>
+                        </li>
+                    </ol>
+                </div>
+
+                <div class="os-content" id="os-debian">
+                    <ol>
+                        <li>Stop your PostgreSQL service:
+                            <code>sudo systemctl stop postgresql</code>
+                            or
+                            <code>sudo service postgresql stop</code>
+                        </li>
+                        <li>Confirm the database is fully stopped:
+                            <code>sudo systemctl status postgresql</code>
+                        </li>
+                        <li>Then click "Restore Database" below</li>
+                        <li>After restore completes, restart PostgreSQL:
+                            <code>sudo systemctl start postgresql</code>
+                            or
+                            <code>sudo service postgresql start</code>
+                        </li>
+                    </ol>
+                </div>
+
+                <div class="os-content" id="os-redhat">
+                    <ol>
+                        <li>Stop your PostgreSQL service:
+                            <code>sudo systemctl stop postgresql</code>
+                            or (for specific versions):
+                            <code>sudo systemctl stop postgresql-14</code>
+                        </li>
+                        <li>Confirm the database is fully stopped:
+                            <code>sudo systemctl status postgresql</code>
+                        </li>
+                        <li>Then click "Restore Database" below</li>
+                        <li>After restore completes, restart PostgreSQL:
+                            <code>sudo systemctl start postgresql</code>
+                            or
+                            <code>sudo systemctl start postgresql-14</code>
+                        </li>
+                    </ol>
+                </div>
+
+                <div class="os-content" id="os-arch">
+                    <ol>
+                        <li>Stop your PostgreSQL service:
+                            <code>sudo systemctl stop postgresql</code>
+                        </li>
+                        <li>Confirm the database is fully stopped:
+                            <code>sudo systemctl status postgresql</code>
+                        </li>
+                        <li>Then click "Restore Database" below</li>
+                        <li>After restore completes, restart PostgreSQL:
+                            <code>sudo systemctl start postgresql</code>
+                        </li>
+                    </ol>
+                </div>
+
+                <div class="os-content" id="os-windows">
+                    <ol>
+                        <li>Stop your PostgreSQL service (run as Administrator):
+                            <code>net stop postgresql-x64-14</code>
+                            or via Services:
+                            <code>services.msc</code>
+                            (Find "postgresql" and click Stop)
+                        </li>
+                        <li>Confirm the database is fully stopped in Services or:
+                            <code>sc query postgresql-x64-14</code>
+                        </li>
+                        <li>Then click "Restore Database" below</li>
+                        <li>After restore completes, restart PostgreSQL:
+                            <code>net start postgresql-x64-14</code>
+                            or via Services
+                        </li>
+                    </ol>
+                </div>
+            </div>
+            <div class="warning-box">
+                <div class="warning-box-header">
+                    <i data-lucide="alert-circle"></i>
+                    <span>This will restore your database to a previous point in time</span>
+                </div>
+                <ul class="warning-list">
+                    <li>All current data files will be replaced with backup data</li>
+                    <li>Any changes made after the backup will be permanently lost</li>
+                    <li>Active connections will be terminated</li>
+                </ul>
+            </div>
+            <div id="postgres-status-message" class="postgres-status-message" style="display: none;"></div>
+            <div class="restore-details">
+                <div class="detail-row">
+                    <span class="detail-label">Backup Label:</span>
+                    <span class="detail-value" id="restore-backup-label"></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Backup Type:</span>
+                    <span class="detail-value" id="restore-backup-type"></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Backup Time:</span>
+                    <span class="detail-value" id="restore-backup-time"></span>
+                </div>
+            </div>
+            <p class="confirmation-text">
+                Are you sure you want to proceed with this restore operation?
+            </p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeRestoreModal()">
+                Cancel
+            </button>
+            <button type="button" class="btn btn-danger" id="confirm-restore-btn" onclick="confirmRestore()">
+                <i data-lucide="rotate-ccw"></i> Restore Database
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Restore Success Modal -->
+<div id="restore-success-modal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeRestoreSuccessModal()"></div>
+    <div class="modal-content success-modal">
+        <div class="modal-header">
+            <h3><i data-lucide="check-circle"></i> Restore Completed Successfully</h3>
+            <button type="button" class="modal-close" onclick="closeRestoreSuccessModal()">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="success-text">
+                <i data-lucide="check-circle"></i>
+                Successfully restored from backup <strong id="success-backup-label"></strong>
+            </p>
+            <div class="restore-next-steps">
+                <p><strong>IMPORTANT: Now restart your PostgreSQL container:</strong></p>
+                <code>docker start &lt;postgres-container&gt;</code>
+                <p class="info-text">
+                    <i data-lucide="info"></i>
+                    Then your database will be restored to the backup point.
+                </p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-primary" onclick="closeRestoreSuccessModal()">
+                <i data-lucide="check"></i> OK
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- All the CSS and JS for the backups page -->
+<style>
+.backups-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+}
+
+.loading-placeholder-large {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-secondary);
+    font-size: 1rem;
+}
+
+.loading-placeholder-large .loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+#backups-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.error-banner {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--danger);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.error-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    color: var(--danger);
+    font-weight: 600;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.error-header i {
+    width: 20px;
+    height: 20px;
+}
+
+.error-details {
+    padding: 0.5rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.error-line {
+    display: flex;
+    gap: 1rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.25rem;
+    margin-bottom: 0.25rem;
+}
+
+.error-line:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.error-time {
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    font-size: 0.75rem;
+}
+
+.error-msg {
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.error-line.error-level {
+    background: rgba(239, 68, 68, 0.15);
+}
+
+.error-line.error-level .error-msg {
+    color: var(--danger);
+}
+
+.error-line.warn-level {
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.error-line.warn-level .error-msg {
+    color: #f59e0b;
+}
+
+.error-line.hint-level {
+    background: rgba(56, 189, 248, 0.1);
+}
+
+.error-line.hint-level .error-msg {
+    color: var(--accent);
+}
+
+.error-simple {
+    padding: 1rem;
+    color: var(--danger);
+}
+
+.status-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 1200px) {
+    .status-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .status-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.status-cards .stat-card {
+    padding: 1.25rem;
+}
+
+.status-cards .stat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.status-cards .stat-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.status-cards .stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.stat-hint {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin: 0;
+}
+
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
+.text-warning { color: #f59e0b; }
+
+.stats-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stats-section h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.5rem;
+}
+
+@media (max-width: 900px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.stat-item-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.stat-item-value {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.actions-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.actions-section h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+}
+
+.backup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.backup-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.action-desc {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.btn-secondary {
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+}
+
+.btn-secondary:hover {
+    background: rgba(56, 189, 248, 0.2);
+}
+
+.btn-outline {
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.btn-outline:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--text-secondary);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.875rem;
+    text-decoration: none;
+}
+
+.table-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.table-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.backup-label {
+    font-family: monospace;
+    font-size: 0.875rem;
+}
+
+.type-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.type-full {
+    background: rgba(34, 197, 94, 0.1);
+    color: var(--success);
+}
+
+.type-diff {
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--accent);
+}
+
+.type-incr {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+}
+
+.status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.status-badge.success {
+    background: rgba(34, 197, 94, 0.1);
+    color: var(--success);
+}
+
+.status-badge.error {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+}
+
+.empty-state {
+    padding: 3rem;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.empty-state i {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 0.5rem 0;
+}
+
+.empty-state .help-text {
+    font-size: 0.875rem;
+    opacity: 0.7;
+}
+
+.backups-page .table-container {
+    overflow: hidden;
+    min-width: 0;
+    margin-bottom: 2rem;
+}
+
+.table-scroll {
+    overflow-x: auto;
+}
+
+.logs-section {
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.logs-container {
+    overflow: auto;
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.8rem;
+    padding: 0.5rem;
+    min-width: 0;
+}
+
+.log-entry {
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    margin-bottom: 0.25rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+    white-space: nowrap;
+}
+
+.log-entry:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.log-time {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.log-level {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    min-width: 50px;
+}
+
+.log-info .log-level { color: var(--accent); }
+.log-warn .log-level, .log-warning .log-level { color: #f59e0b; }
+.log-error .log-level { color: var(--danger); }
+.log-detail .log-level { color: var(--text-secondary); }
+
+.log-message {
+    color: var(--text-primary);
+}
+
+.log-raw {
+    color: var(--text-secondary);
+}
+
+/* Loading placeholder styles */
+.logs-loading {
+    padding: 2rem;
+}
+
+.loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.loading-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* PostgreSQL Archive Logs */
+.pg-logs-section {
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.pg-logs-section .table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.log-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: normal;
+}
+
+.log-continuation {
+    padding-left: 2rem;
+    border-left: 2px solid var(--border);
+    margin-left: 1rem;
+}
+
+.log-continuation-msg {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.log-source-pgbackrest {
+    border-left: 3px solid var(--accent);
+    padding-left: 0.75rem;
+}
+
+.log-source-postgresql {
+    border-left: 3px solid var(--success);
+    padding-left: 0.75rem;
+}
+
+.config-help {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+}
+
+.config-help h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+}
+
+.help-content {
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.help-content ol {
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+}
+
+.help-content li {
+    margin-bottom: 0.75rem;
+}
+
+.help-content code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: var(--accent);
+}
+
+/* Setup Wizard Styles */
+.setup-wizard {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    overflow: hidden;
+}
+
+.wizard-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(56, 189, 248, 0.02));
+    border-bottom: 1px solid var(--border);
+}
+
+.wizard-header > i {
+    width: 40px;
+    height: 40px;
+    color: var(--accent);
+}
+
+.wizard-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+}
+
+.wizard-header p {
+    margin: 0.25rem 0 0 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.wizard-steps {
+    padding: 1rem;
+}
+
+.wizard-step {
+    display: flex;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-radius: 0.75rem;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s;
+}
+
+.wizard-step:last-child {
+    margin-bottom: 0;
+}
+
+.wizard-step.completed {
+    background: rgba(34, 197, 94, 0.05);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.wizard-step.current {
+    background: rgba(56, 189, 248, 0.05);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.wizard-step.pending {
+    opacity: 0.5;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid transparent;
+}
+
+.step-indicator {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.wizard-step.completed .step-indicator {
+    background: var(--success);
+    color: white;
+}
+
+.wizard-step.completed .step-indicator i {
+    width: 18px;
+    height: 18px;
+}
+
+.wizard-step.current .step-indicator {
+    background: var(--accent);
+    color: var(--bg-dark);
+}
+
+.wizard-step.pending .step-indicator {
+    background: var(--border);
+    color: var(--text-secondary);
+}
+
+.step-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.step-content h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.step-desc {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin: 0 0 1rem 0;
+}
+
+.step-status {
+    font-size: 0.875rem;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.step-status.success {
+    color: var(--success);
+}
+
+.step-commands {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.command-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.command-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.step-commands code,
+.manual-command code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--accent);
+    display: block;
+    overflow-x: auto;
+}
+
+.config-details {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin-top: 0.75rem;
+}
+
+.config-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    font-size: 0.875rem;
+}
+
+.config-label {
+    color: var(--text-secondary);
+}
+
+.config-value {
+    color: var(--text-primary);
+    font-family: monospace;
+}
+
+.env-vars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.env-var {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0.375rem;
+}
+
+.env-var i {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.env-var.missing i {
+    color: var(--danger);
+}
+
+.env-var.optional i {
+    color: var(--text-secondary);
+}
+
+.env-var code {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--accent);
+    background: none;
+    padding: 0;
+}
+
+.env-status {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.config-file-section {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.config-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.config-path {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+}
+
+.path-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.config-path code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.375rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--accent);
+}
+
+.config-preview {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.preview-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 0.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-icon i {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.2s;
+}
+
+.btn-icon.rotated i {
+    transform: rotate(180deg);
+}
+
+.config-preview pre {
+    margin: 0;
+    padding: 1rem;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--border);
+    overflow-x: auto;
+    line-height: 1.6;
+}
+
+.stanza-info {
+    margin-bottom: 1rem;
+}
+
+.stanza-name {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.stanza-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.stanza-name code {
+    background: rgba(56, 189, 248, 0.1);
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.375rem;
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: var(--accent);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.stanza-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.stanza-form {
+    margin: 0;
+}
+
+.btn-large {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+}
+
+.action-help {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.action-help i {
+    width: 14px;
+    height: 14px;
+}
+
+.manual-command {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.manual-command .command-label {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.checkbox-label:hover {
+    color: var(--text-primary);
+}
+
+.action-hint {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin: 0.5rem 0 0 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    opacity: 0.7;
+}
+
+.action-hint i {
+    width: 12px;
+    height: 12px;
+}
+
+/* Restore button */
+.btn-restore {
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.75rem;
+}
+
+.btn-restore:hover {
+    background: rgba(56, 189, 248, 0.2);
+}
+
+.btn-restore i {
+    width: 14px;
+    height: 14px;
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+    border: 1px solid var(--danger);
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+    border-color: #dc2626;
+}
+
+/* Modal styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: modalSlideIn 0.2s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-primary);
+}
+
+.modal-header h3 i {
+    width: 24px;
+    height: 24px;
+    color: #f59e0b;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.25rem;
+}
+
+.modal-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.modal-close i {
+    width: 20px;
+    height: 20px;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.warning-text {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0 0 1rem 0;
+    color: var(--text-primary);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.warning-text.critical {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.warning-text.critical i {
+    color: var(--danger);
+}
+
+.warning-text i {
+    width: 20px;
+    height: 20px;
+    color: #f59e0b;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.warning-box {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0 0 1rem 0;
+}
+
+.warning-box-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-primary);
+    margin-bottom: 0.75rem;
+}
+
+.warning-box-header i {
+    width: 20px;
+    height: 20px;
+    color: #f59e0b;
+    flex-shrink: 0;
+}
+
+.warning-box-header span {
+    font-weight: 500;
+}
+
+.postgres-status-message {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin: 1rem 0;
+    font-weight: 500;
+}
+
+.postgres-status-message.running {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: var(--danger);
+}
+
+.postgres-status-message.stopped {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    color: var(--success);
+}
+
+.postgres-status-message.error {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #f59e0b;
+}
+
+.postgres-status-message i {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.btn-disabled {
+    opacity: 0.5;
+    cursor: not-allowed !important;
+}
+
+.restore-instructions {
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0 0 1rem 0;
+}
+
+.restore-instructions p {
+    margin: 0 0 0.75rem 0;
+    color: var(--text-primary);
+}
+
+.os-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin: 1rem 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+}
+
+.os-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+    font-size: 0.875rem;
+}
+
+.os-tab:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.os-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.os-content {
+    display: none;
+}
+
+.os-content.active {
+    display: block;
+}
+
+.restore-instructions ol {
+    margin: 1rem 0 0 0;
+    padding-left: 1.5rem;
+    color: var(--text-secondary);
+}
+
+.restore-instructions li {
+    margin-bottom: 0.75rem;
+}
+
+.restore-instructions code {
+    display: block;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--accent);
+    margin-top: 0.25rem;
+}
+
+.warning-list {
+    list-style: disc;
+    padding-left: 1.5rem;
+    margin: 1rem 0;
+    color: var(--text-secondary);
+}
+
+.warning-list li {
+    margin-bottom: 0.5rem;
+}
+
+.restore-details {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.detail-row:last-child {
+    border-bottom: none;
+}
+
+.detail-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.detail-value {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-family: monospace;
+}
+
+.confirmation-text {
+    color: var(--text-primary);
+    font-weight: 500;
+    margin: 1rem 0 0 0;
+    text-align: center;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Success modal styles */
+.success-modal .modal-header h3 {
+    color: var(--success);
+}
+
+.success-text {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid var(--success);
+    border-radius: 0.5rem;
+    color: var(--success);
+    font-size: 1rem;
+}
+
+.success-text i {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+}
+
+.restore-next-steps {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 0.5rem;
+}
+
+.restore-next-steps p {
+    margin: 0.5rem 0;
+}
+
+.restore-next-steps code {
+    display: block;
+    margin: 0.75rem 0;
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.875rem;
+}
+
+.info-text {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-top: 0.75rem;
+}
+
+.info-text i {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+}
+
+/* Spinner and loading states */
+.spinner {
+    display: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.backup-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 180px;
+    justify-content: center;
+}
+
+.backup-btn.loading .btn-icon-default {
+    display: none;
+}
+
+.backup-btn.loading .spinner {
+    display: inline-block;
+}
+
+.backup-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.backup-actions.loading .backup-btn:not(.loading) {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.backup-status-message {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.backup-status-message.running {
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: var(--accent);
+}
+
+.backup-status-message.success {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    color: var(--success);
+}
+
+.backup-status-message.error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: var(--danger);
+}
+
+.backup-status-message i {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.backup-status-message .status-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+/* Backup Timeline Chart Styles */
+.backup-chart-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.chart-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.chart-legend {
+    display: flex;
+    gap: 1rem;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.backup-timeline {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    height: 180px;
+    padding-bottom: 1.5rem;
+    overflow-x: auto;
+    padding-top: 1rem;
+}
+
+.backup-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 40px;
+    flex-shrink: 0;
+    position: relative;
+    cursor: pointer;
+}
+
+.backup-item:hover .backup-node {
+    transform: scale(1.1);
+    filter: brightness(1.2);
+}
+
+.backup-connector {
+    position: absolute;
+    top: 50%;
+    right: 50%;
+    width: 50px; /* Adjust based on gap */
+    height: 2px;
+    background: var(--border);
+    z-index: 0;
+    display: none; /* Simplify: no connecting lines for now as CSS-only connectors are tricky with flex-gap */
+}
+
+.backup-node {
+    width: 24px;
+    min-height: 24px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    position: relative;
+    z-index: 1;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.node-inner {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.node-type {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.9);
+}
+
+.backup-meta {
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    background: rgba(0,0,0,0.8);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    white-space: nowrap;
+    z-index: 10;
+}
+
+.backup-item:hover .backup-meta {
+    opacity: 1;
+    bottom: 30px; /* Show above */
+}
+
+.backup-date {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.backup-size {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.backup-node.type-full {
+    background: var(--success);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.backup-node.type-diff {
+    background: var(--accent);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.backup-node.type-incr {
+    background: #f59e0b;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.chain-start::before {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+}
+
+</style>
+
+<script>
+// Load backup content fragment asynchronously
+window.addEventListener('DOMContentLoaded', function() {
+    console.log('Backups page loaded, fetching fragment...');
+    
+    const loadingDiv = document.getElementById('backups-loading');
+    const contentDiv = document.getElementById('backups-content');
+
+    if (!loadingDiv || !contentDiv) {
+        console.error('Required elements not found');
+        return;
+    }
+
+    async function loadBackupData() {
+        try {
+            // Force a small delay to prevent flickering if it loads too fast
+            const fetchPromise = fetch('/backups/fragment');
+            const delayPromise = new Promise(resolve => setTimeout(resolve, 300));
+            
+            const [response] = await Promise.all([fetchPromise, delayPromise]);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const html = await response.text();
+
+            // Hide loading, show content
+            loadingDiv.style.display = 'none';
+            contentDiv.style.display = 'block';
+
+            // Inject the HTML fragment
+            contentDiv.innerHTML = html;
+
+            // Initialize lucide icons
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+
+            // Initialize backup button handlers after content is rendered
+            initializeBackupHandlers();
+            
+
+
+            // Check for success message from restore
+            checkRestoreSuccess();
+            
+        } catch (err) {
+            console.error('Failed to load backup data:', err);
+            loadingDiv.style.display = 'none';
+            contentDiv.style.display = 'block';
+            contentDiv.innerHTML = `<div class="error-banner"><div class="error-header"><i data-lucide="alert-circle"></i><span>Error</span></div><div class="error-simple">Failed to load backup data: ${err.message}. <br><br>Check server logs for more details.</div></div>`;
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+    }
+
+    loadBackupData();
+});
+
+function togglePreview() {
+    const content = document.getElementById('config-preview-content');
+    const chevron = document.getElementById('preview-chevron');
+    const btn = chevron.closest('.btn-icon');
+
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        btn.classList.add('rotated');
+    } else {
+        content.style.display = 'none';
+        btn.classList.remove('rotated');
+    }
+    lucide.createIcons();
+}
+
+// Backup state management
+function initializeBackupHandlers() {
+    const backupActions = document.getElementById('backup-actions');
+    const statusMessage = document.getElementById('backup-status-message');
+
+    // Exit early if backup actions section doesn't exist (stanza not configured)
+    if (!backupActions) return;
+
+    const backupButtons = document.querySelectorAll('.backup-btn');
+    let eventSource = null;
+    let currentState = <%~ JSON.stringify(it.backupState || { status: 'idle' }) %>;
+    let hasSeenRunning = currentState.status === 'running';
+    let hasTriggeredReload = false;
+    
+    // Type labels for display
+    const typeLabels = {
+        incr: 'Incremental',
+        diff: 'Differential',
+        full: 'Full'
+    };
+
+    // Apply initial state
+    applyState(currentState, true);
+
+    // Connect to SSE
+    connectSSE();
+
+    function connectSSE() {
+        if (eventSource) {
+            eventSource.close();
+        }
+
+        eventSource = new EventSource('/backups/events');
+
+        eventSource.onmessage = function(event) {
+            try {
+                const state = JSON.parse(event.data);
+                handleStateChange(state);
+            } catch (e) {
+                console.error('Failed to parse SSE data:', e);
+            }
+        };
+
+        eventSource.onerror = function(e) {
+            console.warn('SSE connection error, will retry...');
+            // EventSource will automatically reconnect
+        };
+    }
+
+    function handleStateChange(newState) {
+        currentState = newState;
+
+        // Track if we've ever seen a running state
+        if (newState.status === 'running') {
+            hasSeenRunning = true;
+        }
+
+        // Only show completion messages if we've witnessed the backup running
+        const skipCompletionMessage = !hasSeenRunning;
+        applyState(newState, skipCompletionMessage);
+
+        // If backup completed (success or error) and we previously saw it running, refresh
+        if (!hasTriggeredReload && hasSeenRunning &&
+            (newState.status === 'success' || newState.status === 'error')) {
+            hasTriggeredReload = true;
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        }
+    }
+
+    function applyState(state, skipCompletionMessage = false) {
+        backupButtons.forEach(btn => {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        });
+        backupActions.classList.remove('loading');
+
+        if (state.status === 'running') {
+            const activeBtn = document.querySelector(`.backup-btn[data-type="${state.type}"]`);
+            if (activeBtn) {
+                activeBtn.classList.add('loading');
+            }
+            backupButtons.forEach(btn => btn.disabled = true);
+            backupActions.classList.add('loading');
+            showStatusMessage('running', `Running ${typeLabels[state.type] || state.type} backup...`);
+        } else if (state.status === 'success' && !skipCompletionMessage) {
+            showStatusMessage('success', `${typeLabels[state.type] || state.type} backup completed successfully!`);
+        } else if (state.status === 'error' && !skipCompletionMessage) {
+            showStatusMessage('error', `Backup failed: ${state.error || 'Unknown error'}`);
+        } else {
+            hideStatusMessage();
+        }
+    }
+
+    function showStatusMessage(type, message) {
+        if (!statusMessage) return;
+        statusMessage.className = 'backup-status-message ' + type;
+
+        let iconHtml = '';
+        if (type === 'running') {
+            iconHtml = '<span class="status-spinner"></span>';
+        } else if (type === 'success') {
+            iconHtml = '<i data-lucide="check-circle"></i>';
+        } else if (type === 'error') {
+            iconHtml = '<i data-lucide="alert-circle"></i>';
+        }
+
+        statusMessage.innerHTML = iconHtml + '<span>' + escapeHtml(message) + '</span>';
+        statusMessage.style.display = 'flex';
+
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+    }
+
+    function hideStatusMessage() {
+        if (statusMessage) statusMessage.style.display = 'none';
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Handle backup button clicks
+    backupButtons.forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const type = this.dataset.type;
+            hasSeenRunning = true;
+
+            this.classList.add('loading');
+            backupButtons.forEach(b => b.disabled = true);
+            backupActions.classList.add('loading');
+            showStatusMessage('running', `Starting ${typeLabels[type] || type} backup...`);
+
+            try {
+                const response = await fetch('/backups/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type })
+                });
+
+                const result = await response.json();
+                if (!result.success) {
+                    showStatusMessage('error', result.error || 'Failed to start backup');
+                    setTimeout(() => applyState({ status: 'idle' }), 3000);
+                }
+            } catch (err) {
+                console.error('Failed to start backup:', err);
+                showStatusMessage('error', 'Failed to start backup: ' + err.message);
+                setTimeout(() => applyState({ status: 'idle' }), 3000);
+            }
+        });
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (eventSource) {
+            eventSource.close();
+        }
+    });
+}
+
+// Restore functionality
+let selectedBackupLabel = null;
+let postgresStatusInterval = null;
+let isRestoring = false;
+
+async function checkPostgresStatus() {
+    try {
+        const response = await fetch('/backups/postgres-status');
+        const status = await response.json();
+
+        const restoreBtn = document.getElementById('confirm-restore-btn');
+        const statusMessage = document.getElementById('postgres-status-message');
+
+        if (status.running) {
+            restoreBtn.disabled = true;
+            restoreBtn.classList.add('btn-disabled');
+            statusMessage.innerHTML = '<i data-lucide="alert-circle"></i> PostgreSQL is running. Stop the database first.';
+            statusMessage.className = 'postgres-status-message running';
+            statusMessage.style.display = 'flex';
+        } else if (!isRestoring) {
+            restoreBtn.disabled = false;
+            restoreBtn.classList.remove('btn-disabled');
+            statusMessage.innerHTML = '<i data-lucide="check-circle"></i> PostgreSQL is stopped. Ready to restore.';
+            statusMessage.className = 'postgres-status-message stopped';
+            statusMessage.style.display = 'flex';
+        }
+
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+
+        return status;
+    } catch (err) {
+        console.error('Failed to check postgres status:', err);
+        const statusMessage = document.getElementById('postgres-status-message');
+        if (statusMessage) {
+            statusMessage.innerHTML = '<i data-lucide="alert-triangle"></i> Unable to check database status';
+            statusMessage.className = 'postgres-status-message error';
+            statusMessage.style.display = 'flex';
+        }
+    }
+}
+
+function openRestoreModal(backupLabel, backupType, backupTime) {
+    selectedBackupLabel = backupLabel;
+    document.getElementById('restore-backup-label').textContent = backupLabel;
+    document.getElementById('restore-backup-type').textContent = backupType.toUpperCase();
+    document.getElementById('restore-backup-time').textContent = backupTime;
+
+    const modal = document.getElementById('restore-modal');
+    modal.style.display = 'flex';
+
+    checkPostgresStatus();
+    if (postgresStatusInterval) clearInterval(postgresStatusInterval);
+    postgresStatusInterval = setInterval(checkPostgresStatus, 2000);
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function closeRestoreModal() {
+    const modal = document.getElementById('restore-modal');
+    modal.style.display = 'none';
+    selectedBackupLabel = null;
+    if (postgresStatusInterval) {
+        clearInterval(postgresStatusInterval);
+        postgresStatusInterval = null;
+    }
+}
+
+function checkRestoreSuccess() {
+    const restoreSuccess = localStorage.getItem('restoreSuccess');
+    if (restoreSuccess) {
+        localStorage.removeItem('restoreSuccess');
+        setTimeout(() => {
+            const modal = document.getElementById('restore-success-modal');
+            const labelEl = document.getElementById('success-backup-label');
+            if (modal && labelEl) {
+                labelEl.textContent = restoreSuccess;
+                modal.style.display = 'flex';
+                if (window.lucide) window.lucide.createIcons();
+            }
+        }, 100);
+    }
+}
+
+function closeRestoreSuccessModal() {
+    const modal = document.getElementById('restore-success-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function confirmRestore() {
+    if (!selectedBackupLabel) {
+        alert('No backup selected');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('confirm-restore-btn');
+    const originalContent = confirmBtn.innerHTML;
+
+    isRestoring = true;
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<span class="spinner" style="display: inline-block;"></span> Restoring...';
+
+    try {
+        const response = await fetch('/backups/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backupLabel: selectedBackupLabel })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            isRestoring = false;
+            closeRestoreModal();
+            localStorage.setItem('restoreSuccess', selectedBackupLabel);
+            window.location.reload();
+        } else {
+            const errorMsg = result.error || 'Unknown error';
+            const shortError = errorMsg.length > 500 ? errorMsg.substring(0, 500) + '...' : errorMsg;
+            alert(`Restore failed!\n\nMake sure PostgreSQL is stopped before running restore.\n\nError details:\n${shortError}`);
+            isRestoring = false;
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = originalContent;
+        }
+    } catch (err) {
+        console.error('Restore error:', err);
+        alert(`Restore failed: ${err.message}`);
+        isRestoring = false;
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalContent;
+    }
+}
+
+// Add global event listeners (using delegation for dynamic content)
+document.addEventListener('click', function(e) {
+    // Restore button click
+    if (e.target.closest('.btn-restore')) {
+        const btn = e.target.closest('.btn-restore');
+        const backupLabel = btn.dataset.backupLabel;
+        const backupType = btn.dataset.backupType;
+        const backupTime = btn.dataset.backupTime;
+        openRestoreModal(backupLabel, backupType, backupTime);
+    }
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeRestoreModal();
+        closeRestoreSuccessModal();
+    }
+});
+
+function switchOsTab(event, osId) {
+    document.querySelectorAll('.os-tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.os-content').forEach(content => content.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('os-' + osId).classList.add('active');
+}
+
+function toggleLogs() {
+    const logsContainer = document.getElementById('logs-container');
+    const toggleText = document.getElementById('log-toggle-text');
+    
+    if (logsContainer.style.display === 'none') {
+        logsContainer.style.display = 'block';
+        toggleText.textContent = 'Hide System Logs';
+    } else {
+        logsContainer.style.display = 'none';
+        toggleText.textContent = 'Show System Logs';
+    }
+}
+</script>
+</script>
+
+</script>
