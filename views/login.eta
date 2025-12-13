@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - PGSecMin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/lucide.js"></script>
+    <style>
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-dark);
+        }
+
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 3rem;
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+        }
+
+        .login-logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 2rem;
+            text-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        .login-logo i {
+            width: 32px;
+            height: 32px;
+        }
+
+        .login-title {
+            font-size: 1.25rem;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .login-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            margin-bottom: 2rem;
+        }
+
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 1rem;
+            padding: 3rem 2rem;
+            transition: all 0.3s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(56, 189, 248, 0.05);
+        }
+
+        .drop-zone.dragover {
+            transform: scale(1.02);
+            box-shadow: 0 0 30px var(--accent-glow);
+        }
+
+        .drop-zone-icon {
+            color: var(--accent);
+            margin-bottom: 1rem;
+        }
+
+        .drop-zone-icon i {
+            width: 48px;
+            height: 48px;
+        }
+
+        .drop-zone-text {
+            color: var(--text-primary);
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .drop-zone-hint {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .drop-zone input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--danger);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-align: left;
+        }
+
+        .error-message i {
+            flex-shrink: 0;
+        }
+
+        .loading-state {
+            display: none;
+        }
+
+        .loading-state.active {
+            display: block;
+        }
+
+        .loading-state .drop-zone {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .file-selected {
+            display: none;
+        }
+
+        .file-selected.active {
+            display: block;
+        }
+
+        .file-name {
+            color: var(--accent);
+            font-weight: 500;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-logo">
+                <i data-lucide="shield-check"></i>
+                <span>PGSecMin</span>
+            </div>
+
+            <h1 class="login-title">Welcome Back</h1>
+            <p class="login-subtitle">Upload your private key file to authenticate</p>
+
+            <% if (it.error) { %>
+            <div class="error-message">
+                <i data-lucide="alert-circle"></i>
+                <span><%= it.error %></span>
+            </div>
+            <% } %>
+
+            <form id="loginForm" action="/login" method="POST" enctype="multipart/form-data">
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-icon">
+                        <i data-lucide="key"></i>
+                    </div>
+                    <div class="drop-zone-text" id="dropText">
+                        Drop your .key file here
+                    </div>
+                    <div class="drop-zone-hint" id="dropHint">
+                        or click to browse
+                    </div>
+                    <div class="file-selected" id="fileSelected">
+                        <span class="file-name" id="fileName"></span>
+                    </div>
+                    <input type="file" name="keyfile" id="keyfile" accept=".key,.pem" required>
+                </div>
+            </form>
+
+            <div class="loading-state" id="loadingState">
+                <div class="spinner"></div>
+                <div class="drop-zone-text">Authenticating...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('keyfile');
+        const form = document.getElementById('loginForm');
+        const dropText = document.getElementById('dropText');
+        const dropHint = document.getElementById('dropHint');
+        const fileSelected = document.getElementById('fileSelected');
+        const fileName = document.getElementById('fileName');
+        const loadingState = document.getElementById('loadingState');
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop zone when dragging over
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('dragover');
+            }, false);
+        });
+
+        // Handle dropped files
+        dropZone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length) {
+                fileInput.files = files;
+                handleFile(files[0]);
+            }
+        });
+
+        // Handle selected files
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            // Show file name
+            dropText.style.display = 'none';
+            dropHint.style.display = 'none';
+            fileSelected.classList.add('active');
+            fileName.textContent = file.name;
+
+            // Auto submit after short delay
+            setTimeout(() => {
+                dropZone.style.display = 'none';
+                loadingState.style.display = 'block';
+                form.submit();
+            }, 300);
+        }
+    </script>
+</body>
+</html>

@@ -1,13 +1,25 @@
 const express = require("express");
 const { Eta } = require("eta");
 const path = require("node:path");
+const fs = require("node:fs");
 const helmet = require("helmet");
 const compression = require("compression");
+const cookieParser = require("cookie-parser");
+const multer = require("multer");
+const crypto = require("node:crypto");
 
 const app = express();
 const PORT = process.env.PORT || 8780;
+const COOKIE_SECRET =
+	process.env.COOKIE_SECRET || crypto.randomBytes(32).toString("hex");
+const SESSION_COOKIE_NAME = "pgsecmin_session";
 
-// Middleware
+// Multer for file uploads (memory storage)
+const upload = multer({
+	storage: multer.memoryStorage(),
+	limits: { fileSize: 10 * 1024 },
+}); // 10KB max
+
 // Middleware
 app.use(
 	helmet({
@@ -26,32 +38,10 @@ app.use(compression());
 app.use(express.static(path.join(__dirname, "../public")));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser(COOKIE_SECRET));
 
 // IP Restriction Middleware
-const ALLOWED_CIDR = "100.64.0.0/10";
 const ALLOWED_LOCALS = ["127.0.0.1", "::1", "::ffff:127.0.0.1"];
-
-function ipToLong(ip) {
-	const parts = ip.split(".");
-	if (parts.length !== 4) return null;
-	return (
-		(parseInt(parts[0], 10) << 24) |
-		(parseInt(parts[1], 10) << 16) |
-		(parseInt(parts[2], 10) << 8) |
-		parseInt(parts[3], 10)
-	);
-}
-
-function inCidr(ip, cidr) {
-	const [range, bits] = cidr.split("/");
-	const mask = ~(2 ** (32 - bits) - 1);
-	const ipLong = ipToLong(ip);
-	const rangeLong = ipToLong(range);
-
-	if (ipLong === null || rangeLong === null) return false;
-
-	return (ipLong & mask) === (rangeLong & mask);
-}
 
 app.use((req, res, next) => {
 	let clientIp = req.ip || req.connection.remoteAddress;
@@ -75,19 +65,87 @@ app.use((req, res, next) => {
 		return res.status(403).send("Forbidden");
 	}
 
-	if (inCidr(clientIp, ALLOWED_CIDR)) {
-		return next();
+	next();
+});
+
+// Authentication helpers
+const CLIENT_CERTS_DIR =
+	process.env.CLIENT_CERTS_DIR || "/data/certs/postgres-clients/";
+
+function createSessionToken(certName) {
+	const payload = JSON.stringify({ cert: certName, ts: Date.now() });
+	const hmac = crypto.createHmac("sha256", COOKIE_SECRET);
+	hmac.update(payload);
+	const signature = hmac.digest("hex");
+	return Buffer.from(`${payload}.${signature}`).toString("base64");
+}
+
+function verifySessionToken(token) {
+	try {
+		const decoded = Buffer.from(token, "base64").toString("utf8");
+		const lastDot = decoded.lastIndexOf(".");
+		if (lastDot === -1) return null;
+
+		const payload = decoded.substring(0, lastDot);
+		const signature = decoded.substring(lastDot + 1);
+
+		const hmac = crypto.createHmac("sha256", COOKIE_SECRET);
+		hmac.update(payload);
+		const expectedSig = hmac.digest("hex");
+
+		if (signature !== expectedSig) return null;
+
+		return JSON.parse(payload);
+	} catch {
+		return null;
+	}
+}
+
+async function validateKeyFile(keyContent) {
+	// Compare uploaded key with existing keys in the certs directory
+	try {
+		const files = await fs.promises.readdir(CLIENT_CERTS_DIR);
+		const keyFiles = files.filter((f) => f.endsWith(".key") && f !== "ca.key");
+
+		for (const keyFile of keyFiles) {
+			const existingKey = await fs.promises.readFile(
+				path.join(CLIENT_CERTS_DIR, keyFile),
+				"utf8",
+			);
+			// Normalize line endings and trim for comparison
+			if (existingKey.trim() === keyContent.trim()) {
+				return keyFile.replace(".key", "");
+			}
+		}
+		return null;
+	} catch (e) {
+		console.error("Error validating key:", e);
+		return null;
+	}
+}
+
+// Authentication middleware
+function requireAuth(req, res, next) {
+	const token = req.signedCookies[SESSION_COOKIE_NAME];
+	if (!token) {
+		return res.redirect("/login");
 	}
 
-	console.warn(`Blocked access from IP: ${clientIp}`);
-	res
-		.status(403)
-		.send("Forbidden: Access allowed only from Tailscale network.");
-});
+	const session = verifySessionToken(token);
+	if (!session || !session.cert) {
+		res.clearCookie(SESSION_COOKIE_NAME);
+		return res.redirect("/login");
+	}
+
+	// Attach session info to request
+	req.session = session;
+	res.locals.certName = session.cert;
+	next();
+}
 
 // View Engine Setup
 const viewDir = path.join(__dirname, "../views");
-const eta = new Eta({ views: viewDir });
+const eta = new Eta({ views: viewDir, autoTrim: false });
 
 app.engine("eta", (filePath, options, callback) => {
 	try {
@@ -107,6 +165,66 @@ app.set("views", viewDir);
 
 // Routes
 const db = require("./db");
+
+// Login routes (not protected by auth)
+app.get("/login", (req, res) => {
+	// If already logged in, redirect to dashboard
+	const token = req.signedCookies[SESSION_COOKIE_NAME];
+	if (token) {
+		const session = verifySessionToken(token);
+		if (session?.cert) {
+			return res.redirect("/");
+		}
+	}
+	res.render("login", { title: "Login", error: null });
+});
+
+app.post("/login", upload.single("keyfile"), async (req, res) => {
+	try {
+		if (!req.file) {
+			return res.render("login", {
+				title: "Login",
+				error: "No key file uploaded",
+			});
+		}
+
+		const keyContent = req.file.buffer.toString("utf8");
+		const certName = await validateKeyFile(keyContent);
+
+		if (!certName) {
+			return res.render("login", {
+				title: "Login",
+				error: "Invalid key file. No matching certificate found.",
+			});
+		}
+
+		// Create session token and set cookie
+		const token = createSessionToken(certName);
+		res.cookie(SESSION_COOKIE_NAME, token, {
+			signed: true,
+			httpOnly: true,
+			secure: process.env.NODE_ENV === "production",
+			sameSite: "strict",
+			maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+		});
+
+		res.redirect("/");
+	} catch (err) {
+		console.error("Login error:", err);
+		res.render("login", {
+			title: "Login",
+			error: "An error occurred during login",
+		});
+	}
+});
+
+app.post("/logout", (_req, res) => {
+	res.clearCookie(SESSION_COOKIE_NAME);
+	res.redirect("/login");
+});
+
+// Apply authentication middleware to all routes below
+app.use(requireAuth);
 
 // Make db connection info available to all views
 app.use((_req, res, next) => {
@@ -590,6 +708,252 @@ app.get("/status", async (_req, res) => {
 			loggingEnabled: false,
 			insecureUserCount: 0,
 		});
+	}
+});
+
+// Backup Routes
+const backupManager = require("./backup");
+
+app.get("/backups", async (_req, res) => {
+	// Render page immediately with loading state - all data fetched async via JS
+	res.render("backups", {
+		title: "Backups",
+		path: "/backups",
+		loading: true,
+		formatBytes: backupManager.formatBytes,
+		backupState: backupManager.getBackupState(),
+	});
+});
+
+// HTML fragment endpoint for backup content (loaded asynchronously)
+app.get("/backups/fragment", async (_req, res) => {
+	try {
+		const status = await backupManager.getSystemStatus();
+		const logs = backupManager.getRecentLogs(50);
+		const pgLogs = backupManager.getPostgresLogs({
+			limit: 100,
+			archiveOnly: true,
+		});
+
+		res.render("backups-content", {
+			status,
+			logs: logs.success ? logs.logs : [],
+			pgLogs: pgLogs.success ? pgLogs.logs : [],
+			formatBytes: backupManager.formatBytes,
+		});
+	} catch (err) {
+		console.error("Fragment render error:", err);
+		res
+			.status(500)
+			.send(
+				`<div class="error-banner"><div class="error-header"><i data-lucide="alert-circle"></i><span>Error</span></div><div class="error-simple">${err.message}</div></div>`,
+			);
+	}
+});
+
+// API endpoint for logs (loaded asynchronously)
+app.get("/backups/logs", (_req, res) => {
+	try {
+		const logs = backupManager.getRecentLogs(50);
+		const pgLogs = backupManager.getPostgresLogs({
+			limit: 100,
+			archiveOnly: true,
+		});
+		res.json({
+			logs: logs.success ? logs.logs : [],
+			pgLogs: pgLogs.success ? pgLogs.logs : [],
+		});
+	} catch (err) {
+		res.status(500).json({ error: err.message, logs: [], pgLogs: [] });
+	}
+});
+
+// SSE endpoint for backup state updates (no compression for this route)
+app.get("/backups/events", (req, res) => {
+	// Disable compression for SSE
+	res.setHeader("Content-Type", "text/event-stream");
+	res.setHeader("Cache-Control", "no-cache, no-transform");
+	res.setHeader("Connection", "keep-alive");
+	res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+	res.setHeader("Content-Encoding", "identity"); // Disable compression
+
+	// Flush headers immediately
+	res.flushHeaders();
+
+	// Helper to write and flush
+	const sendEvent = (data) => {
+		res.write(`data: ${JSON.stringify(data)}\n\n`);
+		// Flush if compression middleware added flush method
+		if (res.flush) res.flush();
+	};
+
+	// Send initial state
+	const initialState = backupManager.getBackupState();
+	sendEvent(initialState);
+
+	// Listen for state changes
+	const onStateChange = (state) => {
+		sendEvent(state);
+	};
+
+	backupManager.backupEvents.on("stateChange", onStateChange);
+
+	// Send heartbeat every 30 seconds to keep connection alive
+	const heartbeat = setInterval(() => {
+		res.write(": heartbeat\n\n");
+		if (res.flush) res.flush();
+	}, 30000);
+
+	// Clean up on client disconnect
+	req.on("close", () => {
+		backupManager.backupEvents.off("stateChange", onStateChange);
+		clearInterval(heartbeat);
+	});
+});
+
+// Get current backup state (for polling fallback)
+app.get("/backups/state", (_req, res) => {
+	res.json(backupManager.getBackupState());
+});
+
+app.post("/backups/run", async (req, res) => {
+	try {
+		const { type } = req.body;
+		const validTypes = ["full", "diff", "incr"];
+
+		if (!validTypes.includes(type)) {
+			return res
+				.status(400)
+				.json({ success: false, error: "Invalid backup type" });
+		}
+
+		const result = await backupManager.runBackup(type);
+
+		if (result.success) {
+			res.json({ success: true, started: true, type });
+		} else {
+			res.status(409).json({ success: false, error: result.error });
+		}
+	} catch (err) {
+		console.error("Backup run error:", err);
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
+
+app.get("/backups/info", async (_req, res) => {
+	try {
+		const status = await backupManager.getSystemStatus();
+		res.json(status);
+	} catch (err) {
+		res.status(500).json({ error: err.message });
+	}
+});
+
+app.get("/backups/config", (_req, res) => {
+	try {
+		const configContent = backupManager.generateConfig();
+		res.type("text/plain").send(configContent);
+	} catch (err) {
+		res.status(500).send(`Error generating config: ${err.message}`);
+	}
+});
+
+app.post("/backups/config", async (_req, res) => {
+	const renderError = async (errorMsg) => {
+		const status = await backupManager.getSystemStatus().catch(() => null);
+		res.status(500).render("backups", {
+			title: "Backups",
+			path: "/backups",
+			status,
+			error: errorMsg,
+			formatBytes: backupManager.formatBytes,
+		});
+	};
+
+	try {
+		const result = backupManager.writeConfig();
+		if (result.success) {
+			res.redirect("/backups");
+		} else {
+			await renderError(`Failed to create config file: ${result.error}`);
+		}
+	} catch (err) {
+		console.error("Config write error:", err);
+		await renderError(`Error creating config file: ${err.message}`);
+	}
+});
+
+app.post("/backups/stanza-create", async (req, res) => {
+	const renderError = async (errorMsg) => {
+		const status = await backupManager.getSystemStatus().catch(() => null);
+		res.status(500).render("backups", {
+			title: "Backups",
+			path: "/backups",
+			status,
+			error: errorMsg,
+			formatBytes: backupManager.formatBytes,
+		});
+	};
+
+	try {
+		const noOnline = req.body.noOnline === "true" || req.body.noOnline === "1";
+		const result = await backupManager.createStanza({ noOnline });
+		if (result.success) {
+			res.redirect("/backups");
+		} else {
+			await renderError(`Stanza creation failed: ${result.error}`);
+		}
+	} catch (err) {
+		console.error("Stanza creation error:", err);
+		await renderError(`Error creating stanza: ${err.message}`);
+	}
+});
+
+app.post("/backups/check", async (_req, res) => {
+	try {
+		const result = await backupManager.runCheck();
+		res.json(result);
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
+
+app.get("/backups/postgres-status", async (_req, res) => {
+	try {
+		const status = await backupManager.checkPostgresRunning();
+		res.json(status);
+	} catch (err) {
+		console.error("Postgres status check error:", err);
+		res.status(500).json({ running: false, error: err.message });
+	}
+});
+
+app.post("/backups/restore", async (req, res) => {
+	try {
+		const { backupLabel } = req.body;
+
+		if (!backupLabel) {
+			return res
+				.status(400)
+				.json({ success: false, error: "Backup label is required" });
+		}
+
+		const result = await backupManager.restoreBackup(backupLabel);
+
+		if (result.success) {
+			res.json({
+				success: true,
+				message: `Successfully restored from backup ${backupLabel}`,
+				backupLabel,
+			});
+		} else {
+			res
+				.status(500)
+				.json({ success: false, error: result.error, backupLabel });
+		}
+	} catch (err) {
+		console.error("Restore error:", err);
+		res.status(500).json({ success: false, error: err.message });
 	}
 });
 
