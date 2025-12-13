@@ -37,6 +37,12 @@ const config = {
 		process.env.PGBACKREST_CONFIG || "/etc/pgbackrest/pgbackrest.conf",
 	logPath: process.env.PGBACKREST_LOG_PATH || "/var/log/pgbackrest",
 	pgLogPath: process.env.PG_LOG_PATH || "/var/log/postgresql",
+	historyPath:
+		process.env.PGBACKREST_HISTORY_PATH ||
+		path.join(
+			process.env.PGBACKREST_LOG_PATH || "/var/log/pgbackrest",
+			"run-history.json",
+		),
 	s3: {
 		bucket: process.env.PG_SEC_S3_BUCKET,
 		endpoint: process.env.PG_SEC_S3_ENDPOINT || "s3.amazonaws.com",
@@ -263,9 +269,12 @@ function parseBackupInfo(info) {
 /**
  * Run a backup (full, differential, or incremental)
  * @param {string} type - 'full', 'diff', or 'incr'
+ * @param {object} options - Options for the backup
+ * @param {string} options.trigger - 'manual' or 'scheduled'
  * @returns {object} - Returns immediately with status, backup runs in background
  */
-async function runBackup(type = "incr") {
+async function runBackup(type = "incr", options = {}) {
+	const trigger = options.trigger || "manual";
 	const validTypes = ["full", "diff", "incr"];
 	if (!validTypes.includes(type)) {
 		return { success: false, error: `Invalid backup type: ${type}` };
@@ -287,15 +296,70 @@ async function runBackup(type = "incr") {
 	});
 
 	// Run backup in background (don't await)
-	runBackupProcess(type);
+	runBackupProcess(type, trigger);
 
 	return { success: true, started: true, type };
 }
 
 /**
+ * Read backup history from file
+ */
+function readHistory() {
+	try {
+		if (!fs.existsSync(config.historyPath)) {
+			return [];
+		}
+		const data = fs.readFileSync(config.historyPath, "utf8");
+		return JSON.parse(data);
+	} catch (err) {
+		console.error("Error reading backup history:", err.message);
+		return [];
+	}
+}
+
+/**
+ * Write backup history to file
+ */
+function writeHistory(history) {
+	try {
+		// Ensure log directory exists
+		const logDir = path.dirname(config.historyPath);
+		if (!fs.existsSync(logDir)) {
+			fs.mkdirSync(logDir, { recursive: true });
+		}
+		fs.writeFileSync(config.historyPath, JSON.stringify(history, null, 2), {
+			encoding: "utf8",
+		});
+	} catch (err) {
+		console.error("Error writing backup history:", err.message);
+	}
+}
+
+/**
+ * Add entry to backup history
+ */
+function addHistoryEntry(entry) {
+	const history = readHistory();
+	history.unshift(entry); // Add to beginning
+	// Keep only last 100 entries
+	if (history.length > 100) {
+		history.splice(100);
+	}
+	writeHistory(history);
+}
+
+/**
+ * Get backup history (optionally limited)
+ */
+function getHistory(limit = 50) {
+	const history = readHistory();
+	return limit ? history.slice(0, limit) : history;
+}
+
+/**
  * Internal function to run the backup process
  */
-function runBackupProcess(type) {
+function runBackupProcess(type, trigger = "manual") {
 	const args = [
 		`--stanza=${config.stanza}`,
 		`--config=${config.configPath}`,
@@ -319,29 +383,59 @@ function runBackupProcess(type) {
 	});
 
 	proc.on("close", (code) => {
+		const completedAt = new Date().toISOString();
 		if (code === 0) {
 			setBackupState({
 				status: "success",
-				completedAt: new Date().toISOString(),
+				completedAt,
 				output: stdout,
 				error: null,
 			});
+			// Add to history
+			addHistoryEntry({
+				type,
+				status: "success",
+				startedAt: backupState.startedAt,
+				completedAt,
+				trigger,
+				output: stdout,
+			});
 		} else {
+			const error = stderr || stdout || `Backup failed with code ${code}`;
 			setBackupState({
 				status: "error",
-				completedAt: new Date().toISOString(),
-				error: stderr || stdout || `Backup failed with code ${code}`,
+				completedAt,
+				error,
 				output: null,
+			});
+			// Add to history
+			addHistoryEntry({
+				type,
+				status: "error",
+				startedAt: backupState.startedAt,
+				completedAt,
+				trigger,
+				error,
 			});
 		}
 	});
 
 	proc.on("error", (err) => {
+		const completedAt = new Date().toISOString();
 		setBackupState({
 			status: "error",
-			completedAt: new Date().toISOString(),
+			completedAt,
 			error: err.message,
 			output: null,
+		});
+		// Add to history
+		addHistoryEntry({
+			type,
+			status: "error",
+			startedAt: backupState.startedAt,
+			completedAt,
+			trigger,
+			error: err.message,
 		});
 	});
 }
@@ -843,4 +937,7 @@ module.exports = {
 	getBackupState,
 	isBackupRunning,
 	backupEvents,
+	// History management
+	getHistory,
+	addHistoryEntry,
 };

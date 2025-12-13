@@ -957,6 +957,23 @@ app.post("/backups/restore", async (req, res) => {
 	}
 });
 
+// Get backup scheduler status
+app.get("/backups/scheduler", (_req, res) => {
+	const scheduler = require("./scheduler");
+	res.json(scheduler.getSchedulerStatus());
+});
+
+// Get backup history
+app.get("/backups/history", (_req, res) => {
+	try {
+		const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+		const history = backupManager.getHistory(limit);
+		res.json({ success: true, history });
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message, history: [] });
+	}
+});
+
 app.post("/status/enable-logging", async (_req, res) => {
 	try {
 		const initSqlPath = path.join(__dirname, "../postgres-config/init.sql");
@@ -1023,6 +1040,23 @@ app.post("/status/enable-logging", async (_req, res) => {
 		console.error(err);
 		res.status(500).send(`Error enabling logging: ${err.message}`);
 	}
+});
+
+// Initialize backup scheduler
+const scheduler = require("./scheduler");
+scheduler.initScheduler();
+
+// Graceful shutdown handler
+process.on("SIGTERM", () => {
+	console.log("SIGTERM signal received: closing HTTP server");
+	scheduler.stopScheduler();
+	process.exit(0);
+});
+
+process.on("SIGINT", () => {
+	console.log("SIGINT signal received: closing HTTP server");
+	scheduler.stopScheduler();
+	process.exit(0);
 });
 
 app.listen(PORT, () => {
