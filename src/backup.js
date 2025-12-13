@@ -45,16 +45,9 @@ const config = {
 		secretKey: process.env.PG_SEC_S3_SECRET_KEY,
 	},
 	pg: {
-		// Only set host if data is truly remote (not mounted locally)
-		// Set PGBACKREST_PG_HOST explicitly if you need SSH-based remote backup
-		host: process.env.PGBACKREST_PG_HOST || null,
 		port: process.env.PGPORT || "5432",
 		user: process.env.PGBACKREST_PG_USER || process.env.PGUSER || "postgres",
 		dataPath: process.env.PGBACKREST_PG_PATH || "/var/lib/postgresql/data",
-		// SSL certificate paths for pgBackRest (may differ from app's paths)
-		sslCa: process.env.PGBACKREST_SSL_CA || process.env.PGSSLROOTCERT,
-		sslCert: process.env.PGBACKREST_SSL_CERT || process.env.PGSSLCERT,
-		sslKey: process.env.PGBACKREST_SSL_KEY || process.env.PGSSLKEY,
 	},
 };
 
@@ -599,13 +592,6 @@ function generateConfig() {
 		`pg1-path=${config.pg.dataPath}`,
 	];
 
-	// If host is specified, use TCP connection, otherwise use Unix socket
-	if (config.pg.host) {
-		lines.push(`pg1-host=${config.pg.host}`);
-	} else {
-		lines.push(`pg1-socket-path=/var/run/postgresql`);
-	}
-
 	// Add port if not default
 	if (config.pg.port && config.pg.port !== "5432") {
 		lines.push(`pg1-port=${config.pg.port}`);
@@ -616,17 +602,10 @@ function generateConfig() {
 		lines.push(`pg1-user=${config.pg.user}`);
 	}
 
-	// Add PostgreSQL SSL client certificate authentication
-	// These work with both local and remote PostgreSQL connections
-	if (config.pg.sslCa) {
-		lines.push(`pg1-ssl-ca-file=${config.pg.sslCa}`);
-	}
-	if (config.pg.sslCert) {
-		lines.push(`pg1-ssl-cert-file=${config.pg.sslCert}`);
-	}
-	if (config.pg.sslKey) {
-		lines.push(`pg1-ssl-key-file=${config.pg.sslKey}`);
-	}
+	// NOTE: pgBackRest uses standard PostgreSQL environment variables for database connections:
+	// PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+	// PGSSLMODE, PGSSLCERT, PGSSLKEY, PGSSLROOTCERT
+	// These should be set in the container environment for SSL client certificate authentication.
 
 	return `${lines.join("\n")}\n`;
 }
@@ -688,13 +667,9 @@ async function getSystemStatus() {
 			stanza: config.stanza,
 			configPath: config.configPath,
 			logPath: config.logPath,
-			pgHost: config.pg.host,
 			pgPort: config.pg.port,
 			pgUser: config.pg.user,
 			pgPath: config.pg.dataPath,
-			pgSslCa: config.pg.sslCa,
-			pgSslCert: config.pg.sslCert,
-			pgSslKey: config.pg.sslKey,
 		},
 	};
 }
