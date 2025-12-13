@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:16
+    build:
+      context: ./postgres-config
+      dockerfile: Dockerfile.postgres
     ports:
       - "5433:5432"
     environment:
@@ -11,20 +13,93 @@ services:
       - ./local-certs:/certs
       - ./postgres-config/pg_hba.conf:/etc/postgresql/pg_hba.conf
       - ./postgres-config/init.sql:/docker-entrypoint-initdb.d/init.sql
-    command: >
-      postgres 
-      -c ssl=on 
-      -c ssl_cert_file=/certs/server.crt 
-      -c ssl_key_file=/certs/server.key 
-      -c ssl_ca_file=/certs/ca.crt 
-      -c hba_file=/etc/postgresql/pg_hba.conf
-      -c logging_collector=on
-      -c log_destination=csvlog
-      -c log_directory=/var/log/postgresql
-      -c log_filename=postgresql
-      -c log_rotation_age=0
-      -c log_rotation_size=0
-      -c log_connections=on
-      -c log_disconnections=on
-      -c log_min_messages=info
-      -c log_statement=all
+      - ./pgbackrest-config:/etc/pgbackrest
+      - pgdata:/var/lib/postgresql/data
+      - pgsocket:/var/run/postgresql
+      - pglogs:/var/log/postgresql
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/certs/server.crt
+      - -c
+      - ssl_key_file=/certs/server.key
+      - -c
+      - ssl_ca_file=/certs/ca.crt
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - logging_collector=on
+      - -c
+      - log_destination=csvlog
+      - -c
+      - log_directory=/var/log/postgresql
+      - -c
+      - log_filename=postgresql
+      - -c
+      - log_rotation_age=0
+      - -c
+      - log_rotation_size=0
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_min_messages=info
+      - -c
+      - log_statement=all
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=main archive-push %p
+      - -c
+      - wal_level=replica
+
+  pgsecmin:
+    build: .
+    ports:
+      - "8780:8780"
+    environment:
+      PORT: 8780
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: puzed
+      PGUSER: postgres
+      PGPASSWORD: password
+      # SSL certs for postgres connection
+      PGSSLMODE: verify-ca
+      PGSSLROOTCERT: /app/local-certs/ca.crt
+      PGSSLCERT: /app/local-certs/client.crt
+      PGSSLKEY: /app/local-certs/client.key
+      # Cert manager paths
+      CA_CERT_PATH: /app/local-certs/ca.crt
+      CA_KEY_PATH: /app/local-certs/ca.key
+      CLIENT_CERTS_DIR: /app/local-certs/
+      # pgBackRest config
+      PGBACKREST_STANZA: main
+      PGBACKREST_CONFIG: /etc/pgbackrest/pgbackrest.conf
+      PGBACKREST_LOG_PATH: /var/log/pgbackrest
+      # S3 config (override these in .env or docker-compose.override.yml)
+      PG_SEC_S3_BUCKET: ${PG_SEC_S3_BUCKET:-}
+      PG_SEC_S3_ENDPOINT: ${PG_SEC_S3_ENDPOINT:-s3.amazonaws.com}
+      PG_SEC_S3_REGION: ${PG_SEC_S3_REGION:-us-east-1}
+      PG_SEC_S3_ACCESS_KEY: ${PG_SEC_S3_ACCESS_KEY:-}
+      PG_SEC_S3_SECRET_KEY: ${PG_SEC_S3_SECRET_KEY:-}
+    volumes:
+      - ./local-certs:/app/local-certs:ro
+      # Share postgres data directory (read-write for backups and restores)
+      - pgdata:/var/lib/postgresql/data
+      # Share postgres socket for pgBackRest cluster checks
+      - pgsocket:/var/run/postgresql:ro
+      # pgBackRest directories (local mount for persistence)
+      - ./pgbackrest-config:/etc/pgbackrest
+      - pgbackrest-logs:/var/log/pgbackrest
+      # Share PostgreSQL logs (for archive-push error visibility)
+      - pglogs:/var/log/postgresql:ro
+
+volumes:
+  pgdata:
+  pgsocket:
+  pgbackrest-logs:
+  pglogs:
