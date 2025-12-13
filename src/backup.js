@@ -596,37 +596,13 @@ function generateConfig() {
 		"archive-check=n",
 		"",
 		`[${config.stanza}]`,
+		// pgBackRest uses PostgreSQL environment variables (PGHOST, PGSSLMODE, PGSSLCERT, PGSSLKEY, PGSSLROOTCERT)
+		// for SSL connections. No need to specify pg1-host or pg1-ssl-* options.
+		// The data directory is mounted locally, so we access it directly without SSH.
 		`pg1-path=${config.pg.dataPath}`,
+		`pg1-port=${config.pg.port}`,
+		`pg1-user=${config.pg.user}`,
 	];
-
-	// If host is specified, use TCP connection, otherwise use Unix socket
-	if (config.pg.host) {
-		lines.push(`pg1-host=${config.pg.host}`);
-	} else {
-		lines.push(`pg1-socket-path=/var/run/postgresql`);
-	}
-
-	// Add port if not default
-	if (config.pg.port && config.pg.port !== "5432") {
-		lines.push(`pg1-port=${config.pg.port}`);
-	}
-
-	// Add user for PostgreSQL connections
-	if (config.pg.user) {
-		lines.push(`pg1-user=${config.pg.user}`);
-	}
-
-	// Add PostgreSQL SSL client certificate authentication
-	// These work with both local and remote PostgreSQL connections
-	if (config.pg.sslCa) {
-		lines.push(`pg1-ssl-ca-file=${config.pg.sslCa}`);
-	}
-	if (config.pg.sslCert) {
-		lines.push(`pg1-ssl-cert-file=${config.pg.sslCert}`);
-	}
-	if (config.pg.sslKey) {
-		lines.push(`pg1-ssl-key-file=${config.pg.sslKey}`);
-	}
 
 	return `${lines.join("\n")}\n`;
 }
