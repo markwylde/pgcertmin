@@ -597,27 +597,16 @@ function generateConfig() {
 		"",
 		`[${config.stanza}]`,
 		`pg1-path=${config.pg.dataPath}`,
-		`pg1-socket-path=/var/run/postgresql`,
 	];
 
-	// Add PostgreSQL host only if explicitly set (for SSH-based remote backup)
-	// Don't set this if the data directory is mounted locally (Docker shared volume)
+	// If host is specified, use TCP connection, otherwise use Unix socket
 	if (config.pg.host) {
 		lines.push(`pg1-host=${config.pg.host}`);
-
-		// These settings only apply when using pg1-host (SSH connection)
-		if (config.pg.sslCa) {
-			lines.push(`pg1-host-ca-file=${config.pg.sslCa}`);
-		}
-		if (config.pg.sslCert) {
-			lines.push(`pg1-host-cert-file=${config.pg.sslCert}`);
-		}
-		if (config.pg.sslKey) {
-			lines.push(`pg1-host-key-file=${config.pg.sslKey}`);
-		}
+	} else {
+		lines.push(`pg1-socket-path=/var/run/postgresql`);
 	}
 
-	// Add port if not default (for local socket connections)
+	// Add port if not default
 	if (config.pg.port && config.pg.port !== "5432") {
 		lines.push(`pg1-port=${config.pg.port}`);
 	}
@@ -625,6 +614,18 @@ function generateConfig() {
 	// Add user for PostgreSQL connections
 	if (config.pg.user) {
 		lines.push(`pg1-user=${config.pg.user}`);
+	}
+
+	// Add PostgreSQL SSL client certificate authentication
+	// These work with both local and remote PostgreSQL connections
+	if (config.pg.sslCa) {
+		lines.push(`pg1-ssl-ca-file=${config.pg.sslCa}`);
+	}
+	if (config.pg.sslCert) {
+		lines.push(`pg1-ssl-cert-file=${config.pg.sslCert}`);
+	}
+	if (config.pg.sslKey) {
+		lines.push(`pg1-ssl-key-file=${config.pg.sslKey}`);
 	}
 
 	return `${lines.join("\n")}\n`;
