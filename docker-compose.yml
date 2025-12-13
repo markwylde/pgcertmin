@@ -86,6 +86,14 @@ services:
       PG_SEC_S3_REGION: ${PG_SEC_S3_REGION:-us-east-1}
       PG_SEC_S3_ACCESS_KEY: ${PG_SEC_S3_ACCESS_KEY:-}
       PG_SEC_S3_SECRET_KEY: ${PG_SEC_S3_SECRET_KEY:-}
+      # Incremental backup every hour
+      BACKUP_SCHEDULE_INCR: "0 * * * *"
+
+      # Differential backup every 2 days (at 2 AM)
+      BACKUP_SCHEDULE_DIFF: "0 2 */2 * *"
+
+      # Full backup every 5 days (at 2 AM)
+      BACKUP_SCHEDULE_FULL: "0 2 */5 * *"
     volumes:
       - ./local-certs:/app/local-certs:ro
       # Share postgres data directory (read-write for backups and restores)
