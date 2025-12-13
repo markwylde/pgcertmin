@@ -46,8 +46,8 @@ const config = {
 	},
 	pg: {
 		// Only set host if data is truly remote (not mounted locally)
-		// Set PGBACKREST_PG_HOST explicitly if you need SSH-based remote backup
-		host: process.env.PGBACKREST_PG_HOST || null,
+		// Set PGBACKREST_PG1_HOST explicitly if you need TCP-based connection
+		host: process.env.PGBACKREST_PG1_HOST || null,
 		port: process.env.PGPORT || "5432",
 		user: process.env.PGBACKREST_PG_USER || process.env.PGUSER || "postgres",
 		dataPath: process.env.PGBACKREST_PG_PATH || "/var/lib/postgresql/data",
