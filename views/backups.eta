@@ -368,6 +368,20 @@
 .text-danger { color: var(--danger); }
 .text-warning { color: #f59e0b; }
 
+.schedule-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.schedule-section h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
 .stats-section {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -1827,7 +1841,9 @@ window.addEventListener('DOMContentLoaded', function() {
 
             // Initialize backup button handlers after content is rendered
             initializeBackupHandlers();
-            
+
+            // Load schedule and history
+            loadScheduleAndHistory();
 
 
             // Check for success message from restore
@@ -1860,6 +1876,180 @@ function togglePreview() {
         btn.classList.remove('rotated');
     }
     lucide.createIcons();
+}
+
+// Load and display backup schedule and history
+async function loadScheduleAndHistory() {
+    const scheduleSection = document.getElementById('backup-schedule');
+    const historySection = document.getElementById('run-history');
+
+    if (!scheduleSection && !historySection) {
+        console.log('Schedule and history sections not found in DOM');
+        return;
+    }
+
+    // Load schedule
+    if (scheduleSection) {
+        try {
+            const response = await fetch('/backups/scheduler');
+            const data = await response.json();
+
+            const scheduleInfo = scheduleSection.querySelector('.schedule-info');
+            if (scheduleInfo) {
+                if (!data.enabled) {
+                    scheduleInfo.innerHTML = `
+                        <p style="color: var(--text-secondary); margin: 0;">
+                            No backup schedules configured. Set environment variables
+                            <code>BACKUP_SCHEDULE_FULL</code>, <code>BACKUP_SCHEDULE_DIFF</code>, or
+                            <code>BACKUP_SCHEDULE_INCR</code> to enable automatic backups.
+                        </p>
+                    `;
+                } else {
+                    let scheduleHtml = '<div class="schedule-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">';
+
+                    const scheduleTypes = [
+                        { key: 'full', label: 'Full Backup', color: 'var(--success)' },
+                        { key: 'diff', label: 'Differential Backup', color: 'var(--accent)' },
+                        { key: 'incr', label: 'Incremental Backup', color: '#f59e0b' }
+                    ];
+
+                    scheduleTypes.forEach(({ key, label, color }) => {
+                        const schedule = data.schedules[key];
+                        const nextRun = data.nextRun[key];
+                        const isActive = data.jobs[key];
+
+                        if (schedule) {
+                            const nextRunText = nextRun
+                                ? new Date(nextRun).toLocaleString()
+                                : 'Not scheduled';
+
+                            scheduleHtml += `
+                                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem;">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                        <div style="width: 8px; height: 8px; border-radius: 50%; background: ${color};"></div>
+                                        <span style="font-weight: 600; color: var(--text-primary);">${label}</span>
+                                    </div>
+                                    <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                                        <div style="margin-bottom: 0.25rem;">
+                                            <strong>Schedule:</strong> <code style="background: rgba(0,0,0,0.3); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">${schedule}</code>
+                                        </div>
+                                        <div>
+                                            <strong>Next run:</strong> ${nextRunText}
+                                        </div>
+                                    </div>
+                                    <div style="font-size: 0.75rem;">
+                                        ${isActive
+                                            ? '<span style="color: var(--success);">✓ Active</span>'
+                                            : '<span style="color: var(--text-secondary);">○ Inactive</span>'}
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+
+                    scheduleHtml += '</div>';
+                    scheduleInfo.innerHTML = scheduleHtml;
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load backup schedule:', err);
+            const scheduleInfo = scheduleSection.querySelector('.schedule-info');
+            if (scheduleInfo) {
+                scheduleInfo.innerHTML = `<p style="color: var(--danger); margin: 0;">Failed to load schedule: ${err.message}</p>`;
+            }
+        }
+    }
+
+    // Load history
+    if (historySection) {
+        try {
+            const response = await fetch('/backups/history?limit=20');
+            const data = await response.json();
+
+            const historyInfo = historySection.querySelector('.history-info');
+            if (historyInfo) {
+                if (!data.success || !data.history || data.history.length === 0) {
+                    historyInfo.innerHTML = `
+                        <p style="color: var(--text-secondary); margin: 0;">
+                            No backup history available yet.
+                        </p>
+                    `;
+                } else {
+                    let historyHtml = `
+                        <div class="table-scroll">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid var(--border);">
+                                        <th style="text-align: left; padding: 0.75rem; color: var(--text-secondary); font-size: 0.875rem;">Date & Time</th>
+                                        <th style="text-align: left; padding: 0.75rem; color: var(--text-secondary); font-size: 0.875rem;">Type</th>
+                                        <th style="text-align: left; padding: 0.75rem; color: var(--text-secondary); font-size: 0.875rem;">Trigger</th>
+                                        <th style="text-align: left; padding: 0.75rem; color: var(--text-secondary); font-size: 0.875rem;">Status</th>
+                                        <th style="text-align: left; padding: 0.75rem; color: var(--text-secondary); font-size: 0.875rem;">Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    `;
+
+                    data.history.forEach(entry => {
+                        const startTime = new Date(entry.startedAt);
+                        const endTime = entry.completedAt ? new Date(entry.completedAt) : null;
+                        const duration = endTime ? ((endTime - startTime) / 1000).toFixed(1) + 's' : '-';
+
+                        const typeColors = {
+                            full: 'var(--success)',
+                            diff: 'var(--accent)',
+                            incr: '#f59e0b'
+                        };
+
+                        const statusColors = {
+                            success: 'var(--success)',
+                            error: 'var(--danger)'
+                        };
+
+                        historyHtml += `
+                            <tr style="border-bottom: 1px solid var(--border);">
+                                <td style="padding: 0.75rem; font-size: 0.875rem;">
+                                    ${startTime.toLocaleString()}
+                                </td>
+                                <td style="padding: 0.75rem;">
+                                    <span class="type-badge type-${entry.type}" style="background: rgba(${typeColors[entry.type] === 'var(--success)' ? '34, 197, 94' : typeColors[entry.type] === 'var(--accent)' ? '56, 189, 248' : '245, 158, 11'}, 0.1); color: ${typeColors[entry.type]}; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;">
+                                        ${entry.type}
+                                    </span>
+                                </td>
+                                <td style="padding: 0.75rem; font-size: 0.875rem; color: var(--text-secondary);">
+                                    ${entry.trigger === 'scheduled'
+                                        ? '<span style="color: var(--accent);">⏰ Scheduled</span>'
+                                        : '<span style="color: var(--text-secondary);">👤 Manual</span>'}
+                                </td>
+                                <td style="padding: 0.75rem;">
+                                    <span style="color: ${statusColors[entry.status]}; font-weight: 600; font-size: 0.875rem;">
+                                        ${entry.status === 'success' ? '✓ Success' : '✗ Failed'}
+                                    </span>
+                                </td>
+                                <td style="padding: 0.75rem; font-size: 0.875rem; color: var(--text-secondary);">
+                                    ${duration}
+                                </td>
+                            </tr>
+                        `;
+                    });
+
+                    historyHtml += `
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+
+                    historyInfo.innerHTML = historyHtml;
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load backup history:', err);
+            const historyInfo = historySection.querySelector('.history-info');
+            if (historyInfo) {
+                historyInfo.innerHTML = `<p style="color: var(--danger); margin: 0;">Failed to load history: ${err.message}</p>`;
+            }
+        }
+    }
 }
 
 // Backup state management

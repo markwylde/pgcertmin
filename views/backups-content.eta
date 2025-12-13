@@ -92,6 +92,14 @@ const pgLogs = it.pgLogs || [];
 </div>
 <% } %>
 
+<!-- Backup Schedule -->
+<div class="schedule-section" id="backup-schedule">
+    <h3>Backup Schedule</h3>
+    <div class="schedule-info">
+        Loading schedule...
+    </div>
+</div>
+
 <!-- Backup Statistics -->
 <% if (stanza.configured && stats.totalBackups > 0) { %>
 <div class="stats-section">
@@ -336,10 +344,18 @@ const pgLogs = it.pgLogs || [];
 </div>
 <% } %>
 
+<!-- Run History (Scheduled and Manual) -->
+<div class="history-section" id="run-history">
+    <h3>Run History</h3>
+    <div class="history-info">
+        Loading history...
+    </div>
+</div>
+
 <!-- Backup History and Logs -->
 <% if (stanza.configured) { %>
 <div class="table-container">
-    <div class="table-header"><h3>Backup History</h3></div>
+    <div class="table-header"><h3>Backup Repository</h3></div>
     <% const backups = (backupInfo.backups && backupInfo.backups.length > 0) ? backupInfo.backups : []; %>
     <% if (backups.length > 0) { %>
         <div class="table-scroll">
