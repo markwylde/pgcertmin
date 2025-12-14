@@ -6,7 +6,7 @@
             <span class="stat-label">Databases</span>
             <div class="stat-icon"><i data-lucide="database"></i></div>
         </div>
-        <div class="stat-value"><%= it.stats.dbs %></div> 
+        <div class="stat-value"><%= it.stats.dbs %></div>
     </div>
     <div class="stat-card">
         <div class="stat-header">
@@ -28,6 +28,69 @@
             <div class="stat-icon"><i data-lucide="activity"></i></div>
         </div>
         <div class="stat-value" style="color: <%= it.stats.status === 'Online' ? 'var(--success)' : 'var(--danger)' %>"><%= it.stats.status %></div>
+    </div>
+</div>
+
+<!-- PostgreSQL Monitoring Section -->
+<div class="monitoring-grid">
+    <div class="monitoring-card">
+        <div class="monitoring-header">
+            <div class="gauge-container">
+                <canvas id="connectionsGauge" width="130" height="75"></canvas>
+                <div class="gauge-value" id="connectionsValue">0/100</div>
+            </div>
+            <div class="monitoring-info">
+                <h3>Connections</h3>
+                <p>Active database connections</p>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="connectionsChart"></canvas>
+            <div class="chart-legend-inline">
+                <span class="legend-color connections"></span>
+                <span>Connections</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="monitoring-card">
+        <div class="monitoring-header">
+            <div class="gauge-container">
+                <canvas id="tpsGauge" width="130" height="75"></canvas>
+                <div class="gauge-value" id="tpsValue">0/s</div>
+            </div>
+            <div class="monitoring-info">
+                <h3>Transactions</h3>
+                <p>Transactions per second</p>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="tpsChart"></canvas>
+            <div class="chart-legend-inline">
+                <span class="legend-color tps"></span>
+                <span>TPS</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="monitoring-card">
+        <div class="monitoring-header">
+            <div class="gauge-container">
+                <canvas id="cacheGauge" width="130" height="75"></canvas>
+                <div class="gauge-value" id="cacheValue">0%</div>
+            </div>
+            <div class="monitoring-info">
+                <h3>Cache Hit Ratio</h3>
+                <p>Buffer cache efficiency</p>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="cacheChart"></canvas>
+            <div class="chart-legend-inline">
+                <span class="legend-color cache"></span>
+                <span>Hit %</span>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -131,3 +194,384 @@
         </tbody>
     </table>
 </div>
+
+<script src="/vendor/chart.js"></script>
+<script>
+(function() {
+    // Configuration
+    const MAX_DISPLAY_POINTS = 360; // Show last 30 minutes (360 points at 5s intervals)
+    const COLORS = {
+        connections: { main: '#38bdf8', bg: 'rgba(56, 189, 248, 0.1)' },
+        tps: { main: '#c084fc', bg: 'rgba(192, 132, 252, 0.1)' },
+        cache: { main: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)' }
+    };
+
+    // Data storage
+    let metricsData = {
+        timestamps: [],
+        connections: [],
+        tps: [],
+        cache: []
+    };
+
+    // Chart instances
+    let connectionsChart, tpsChart, cacheChart;
+
+    // Track max connections for display
+    let maxConnections = 100;
+
+    // Format timestamp for chart labels
+    function formatTime(timestamp) {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    // Draw gauge
+    function drawGauge(canvasId, value, maxValue, color) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        const centerX = width / 2;
+        const centerY = height - 8;
+        const radius = Math.min(width / 2, height) - 15;
+
+        ctx.clearRect(0, 0, width, height);
+
+        // Background arc
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
+        ctx.lineWidth = 10;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.stroke();
+
+        // Value arc
+        const percentage = Math.min(value / maxValue, 1);
+        const endAngle = Math.PI + (percentage * Math.PI);
+
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, Math.PI, endAngle, false);
+        ctx.lineWidth = 10;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = color;
+        ctx.stroke();
+    }
+
+    // Create chart configuration
+    function createChartConfig(label, color, suffix = '', suggestedMax = 100) {
+        return {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: label,
+                    data: [],
+                    borderColor: color.main,
+                    backgroundColor: color.bg,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 300 },
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                        titleColor: '#f8fafc',
+                        bodyColor: '#94a3b8',
+                        borderColor: 'rgba(51, 65, 85, 0.5)',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: false
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        grid: { color: 'rgba(51, 65, 85, 0.3)', drawBorder: false },
+                        ticks: { color: '#64748b', font: { size: 10 }, maxRotation: 45, minRotation: 45, maxTicksLimit: 8 }
+                    },
+                    y: {
+                        display: true,
+                        min: 0,
+                        suggestedMax: suggestedMax,
+                        grid: { color: 'rgba(51, 65, 85, 0.3)', drawBorder: false },
+                        ticks: {
+                            color: '#64748b',
+                            font: { size: 10 },
+                            callback: function(value) { return value + suffix; }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // Initialize charts
+    function initCharts() {
+        const connCtx = document.getElementById('connectionsChart');
+        const tpsCtx = document.getElementById('tpsChart');
+        const cacheCtx = document.getElementById('cacheChart');
+
+        if (connCtx) {
+            connectionsChart = new Chart(connCtx, createChartConfig('Connections', COLORS.connections, '', 100));
+        }
+        if (tpsCtx) {
+            tpsChart = new Chart(tpsCtx, createChartConfig('TPS', COLORS.tps, '/s', 10));
+        }
+        if (cacheCtx) {
+            cacheChart = new Chart(cacheCtx, createChartConfig('Cache Hit %', COLORS.cache, '%', 100));
+        }
+    }
+
+    // Update charts with new data
+    function updateCharts() {
+        const labels = metricsData.timestamps.map(formatTime);
+
+        if (connectionsChart) {
+            connectionsChart.data.labels = labels;
+            connectionsChart.data.datasets[0].data = metricsData.connections;
+            connectionsChart.options.scales.y.suggestedMax = Math.max(maxConnections * 0.5, Math.max(...metricsData.connections) * 1.2);
+            connectionsChart.update('none');
+        }
+
+        if (tpsChart) {
+            tpsChart.data.labels = labels;
+            tpsChart.data.datasets[0].data = metricsData.tps;
+            const maxTps = Math.max(...metricsData.tps, 1);
+            tpsChart.options.scales.y.suggestedMax = Math.ceil(maxTps * 1.2);
+            tpsChart.update('none');
+        }
+
+        if (cacheChart) {
+            cacheChart.data.labels = labels;
+            cacheChart.data.datasets[0].data = metricsData.cache;
+            cacheChart.options.scales.y.min = Math.max(0, Math.min(...metricsData.cache) - 5);
+            cacheChart.options.scales.y.suggestedMax = 100;
+            cacheChart.update('none');
+        }
+    }
+
+    // Update gauge displays
+    function updateGauges(metrics) {
+        // Connections
+        const conn = metrics.connections || {};
+        maxConnections = conn.max || 100;
+        drawGauge('connectionsGauge', conn.total || 0, maxConnections, COLORS.connections.main);
+        document.getElementById('connectionsValue').textContent = (conn.total || 0) + '/' + maxConnections;
+
+        // Transactions per second
+        const tps = metrics.transactions?.perSecond || 0;
+        drawGauge('tpsGauge', Math.min(tps, 100), 100, COLORS.tps.main);
+        document.getElementById('tpsValue').textContent = tps.toFixed(1) + '/s';
+
+        // Cache hit ratio
+        const cacheHit = metrics.cacheHitRatio || 0;
+        drawGauge('cacheGauge', cacheHit, 100, COLORS.cache.main);
+        document.getElementById('cacheValue').textContent = cacheHit.toFixed(1) + '%';
+    }
+
+    // Add metrics point to data
+    function addMetricsPoint(metrics) {
+        metricsData.timestamps.push(metrics.timestamp);
+        metricsData.connections.push(metrics.connections?.total || 0);
+        metricsData.tps.push(metrics.transactions?.perSecond || 0);
+        metricsData.cache.push(metrics.cacheHitRatio || 0);
+
+        // Keep only last MAX_DISPLAY_POINTS
+        if (metricsData.timestamps.length > MAX_DISPLAY_POINTS) {
+            metricsData.timestamps.shift();
+            metricsData.connections.shift();
+            metricsData.tps.shift();
+            metricsData.cache.shift();
+        }
+    }
+
+    // Load historical data
+    async function loadHistoricalData() {
+        try {
+            const response = await fetch('/metrics/history', { credentials: 'same-origin' });
+            if (!response.ok) {
+                console.error('Metrics history request failed:', response.status);
+                return;
+            }
+            const data = await response.json();
+
+            if (data.success && data.history.length > 0) {
+                metricsData = { timestamps: [], connections: [], tps: [], cache: [] };
+
+                const history = data.history.slice(-MAX_DISPLAY_POINTS);
+                history.forEach(m => {
+                    metricsData.timestamps.push(m.timestamp);
+                    metricsData.connections.push(m.connections?.total || 0);
+                    metricsData.tps.push(m.transactions?.perSecond || 0);
+                    metricsData.cache.push(m.cacheHitRatio || 0);
+                });
+
+                updateCharts();
+                if (history.length > 0) {
+                    updateGauges(history[history.length - 1]);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load historical metrics:', err);
+        }
+    }
+
+    // Connect to SSE for real-time updates
+    function connectSSE() {
+        const eventSource = new EventSource('/metrics/events', { withCredentials: true });
+
+        eventSource.onmessage = function(event) {
+            try {
+                const metrics = JSON.parse(event.data);
+                addMetricsPoint(metrics);
+                updateCharts();
+                updateGauges(metrics);
+            } catch (err) {
+                console.error('Failed to parse metrics:', err);
+            }
+        };
+
+        eventSource.onerror = function() {
+            // EventSource will auto-reconnect
+        };
+
+        return eventSource;
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        initCharts();
+        loadHistoricalData().then(() => {
+            connectSSE();
+        });
+    });
+})();
+</script>
+
+<style>
+.monitoring-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 1400px) {
+    .monitoring-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 900px) {
+    .monitoring-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.monitoring-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.monitoring-card:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    border-color: var(--accent);
+}
+
+.monitoring-header {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.gauge-container {
+    position: relative;
+    width: 130px;
+    height: 75px;
+    flex-shrink: 0;
+    overflow: visible;
+}
+
+.gauge-value {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.monitoring-info h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.monitoring-info p {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.chart-container {
+    position: relative;
+    height: 180px;
+    overflow: hidden;
+}
+
+.chart-container canvas {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+.chart-legend-inline {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: rgba(15, 23, 42, 0.8);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.legend-color {
+    width: 12px;
+    height: 3px;
+    border-radius: 1px;
+}
+
+.legend-color.connections {
+    background: #38bdf8;
+}
+
+.legend-color.tps {
+    background: #c084fc;
+}
+
+.legend-color.cache {
+    background: #22c55e;
+}
+</style>
