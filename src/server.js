@@ -36,6 +36,12 @@ app.use(
 );
 app.use(compression());
 app.use(express.static(path.join(__dirname, "../public")));
+app.use(
+	"/vendor/chart.js",
+	express.static(
+		path.join(__dirname, "../node_modules/chart.js/dist/chart.umd.js"),
+	),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser(COOKIE_SECRET));
@@ -974,6 +980,77 @@ app.get("/backups/history", (_req, res) => {
 	}
 });
 
+// Metrics Routes
+const metricsService = require("./metrics");
+
+// SSE endpoint for real-time metrics streaming
+app.get("/metrics/events", (req, res) => {
+	// Disable compression for SSE
+	res.setHeader("Content-Type", "text/event-stream");
+	res.setHeader("Cache-Control", "no-cache, no-transform");
+	res.setHeader("Connection", "keep-alive");
+	res.setHeader("X-Accel-Buffering", "no");
+	res.setHeader("Content-Encoding", "identity");
+
+	// Flush headers immediately
+	res.flushHeaders();
+
+	// Helper to write and flush
+	const sendEvent = (data) => {
+		res.write(`data: ${JSON.stringify(data)}\n\n`);
+		if (res.flush) res.flush();
+	};
+
+	// Send current metrics immediately
+	metricsService.getCurrentMetrics().then((metrics) => {
+		sendEvent(metrics);
+	});
+
+	// Listen for new metrics
+	const onMetrics = (metrics) => {
+		sendEvent(metrics);
+	};
+
+	metricsService.metricsEvents.on("metrics", onMetrics);
+
+	// Send heartbeat every 30 seconds
+	const heartbeat = setInterval(() => {
+		res.write(": heartbeat\n\n");
+		if (res.flush) res.flush();
+	}, 30000);
+
+	// Clean up on client disconnect
+	req.on("close", () => {
+		metricsService.metricsEvents.off("metrics", onMetrics);
+		clearInterval(heartbeat);
+	});
+});
+
+// Get historical metrics
+app.get("/metrics/history", (req, res) => {
+	try {
+		const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+		const history = metricsService.getHistory(limit);
+		res.json({
+			success: true,
+			history,
+			interval: metricsService.COLLECTION_INTERVAL,
+		});
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message, history: [] });
+	}
+});
+
+// Get current metrics snapshot
+app.get("/metrics/current", async (_req, res) => {
+	try {
+		const metrics = await metricsService.getCurrentMetrics();
+		res.json({ success: true, metrics });
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
+
 app.post("/status/enable-logging", async (_req, res) => {
 	try {
 		const initSqlPath = path.join(__dirname, "../postgres-config/init.sql");
@@ -1046,16 +1123,23 @@ app.post("/status/enable-logging", async (_req, res) => {
 const scheduler = require("./scheduler");
 scheduler.initScheduler();
 
+// Initialize metrics collection
+const metricsManager = require("./metrics");
+metricsManager.setDb(db);
+metricsManager.startCollecting();
+
 // Graceful shutdown handler
 process.on("SIGTERM", () => {
 	console.log("SIGTERM signal received: closing HTTP server");
 	scheduler.stopScheduler();
+	metricsManager.stopCollecting();
 	process.exit(0);
 });
 
 process.on("SIGINT", () => {
 	console.log("SIGINT signal received: closing HTTP server");
 	scheduler.stopScheduler();
+	metricsManager.stopCollecting();
 	process.exit(0);
 });
 
